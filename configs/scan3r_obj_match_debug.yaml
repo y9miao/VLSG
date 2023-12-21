@@ -76,25 +76,26 @@ model:
 
 # implemetation
 output_dir: "" # to be read in code from env varia
-mode: "train"
+mode: "debug_few_scan"
 # for training
 train:
-  batch_size: 4
-  num_workers: 8
+  batch_size: 1
+  num_workers: 1
   freeze_backbone: True
   use_pretrained: False
+  log_steps: 1
   optim:
     lr: 0.001
     lr_decay: 0.95
     lr_decay_steps: 1
     weight_decay: 0.000001
-    max_epoch: 100
+    max_epoch: 10000
     free_backbone_epoch: 10000 # freeze backbone until certain epochs
     grad_acc_steps: 1
 # for validation
 val:
-  batch_size: 2
-  num_workers: 4
+  batch_size: 1
+  num_workers: 1
   pretrained: "./"
 other:
   use_resume: False

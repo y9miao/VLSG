@@ -1,0 +1,126 @@
+[2023-12-21 21:22:55] [INFO] Command executed: ./src/trainval/trainval_patchobj_aligner.py --config /home/yang/toolbox/ECCV2024/CodePlace/VLSG/configs/scan3r_obj_match.yaml
+[2023-12-21 21:22:55] [INFO] Configs:
+{
+    "data": {
+        "name": "Scan3R",
+        "root_dir": "${Scan3R_ROOT_DIR}",
+        "rescan": false,
+        "img": {
+            "img_step": 5,
+            "w": 960,
+            "h": 540
+        },
+        "img_encoding": {
+            "resize_w": 1024,
+            "resize_h": 576,
+            "img_rotate": true,
+            "patch_w": 16,
+            "patch_h": 9
+        }
+    },
+    "sgaligner": {
+        "label_file_name": "labels.instances.annotated.v2.ply",
+        "pred_subfix": "inseg.ply",
+        "seed": 42,
+        "num_workers": 4,
+        "model_name": "sgaligner",
+        "modules": [
+            "point",
+            "gat",
+            "rel",
+            "attr"
+        ],
+        "use_predicted": false,
+        "registration": false,
+        "scan_type": "scan",
+        "preprocess": {
+            "pc_resolutions": [
+                64,
+                128,
+                256,
+                512
+            ],
+            "subscenes_per_scene": 1,
+            "filter_segment_size": 512,
+            "min_obj_points": 50,
+            "anchor_type_name": ""
+        },
+        "model": {
+            "rel_dim": 9,
+            "attr_dim": 164,
+            "alignment_thresh": 0.4
+        },
+        "train": {
+            "batch_size": 2
+        },
+        "val": {
+            "batch_size": 4,
+            "overlap_low": 0.0,
+            "overlap_high": 0.0,
+            "data_mode": "orig"
+        }
+    },
+    "model_name": "ObjectPatchAligner",
+    "model": {
+        "backbone": {
+            "cfg_file": "${VLSG_SPACE}/src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py",
+            "pretrained": "${VLSG_SPACE}/checkpoint/GCVit/gcvit_1k_tiny.pth.tar",
+            "use_pretrained": true,
+            "num_reduce": 1,
+            "backbone_dim": 512
+        },
+        "patch": {
+            "hidden_dims": [
+                512,
+                512,
+                512
+            ],
+            "encoder_dim": 256
+        },
+        "obj": {
+            "embedding_dim": 400,
+            "embedding_hidden_dims": [
+                512,
+                512
+            ],
+            "encoder_dim": 256
+        },
+        "other": {
+            "drop": 0.2
+        }
+    },
+    "output_dir": "${VLSG_TRAINING_OUT_DIR}",
+    "mode": "train",
+    "train": {
+        "batch_size": 4,
+        "num_workers": 8,
+        "freeze_backbone": true,
+        "use_pretrained": false,
+        "pretrained": "./",
+        "out_dir": "./",
+        "optim": {
+            "lr": 0.001,
+            "lr_decay": 0.95,
+            "lr_decay_steps": 1,
+            "weight_decay": 1e-06,
+            "max_epoch": 100,
+            "free_backbone_epoch": 10000,
+            "grad_acc_steps": 1
+        }
+    },
+    "val": {
+        "batch_size": 2,
+        "num_workers": 4,
+        "pretrained": "./"
+    },
+    "other": {
+        "use_resume": false,
+        "resume": "${VLSG_TRAINING_OUT_DIR}/snapshots/epoch-50.pth.tar"
+    },
+    "seed": 42,
+    "snapshot_dir": "${VLSG_TRAINING_OUT_DIR}/snapshots",
+    "log_dir": "${VLSG_TRAINING_OUT_DIR}/logs",
+    "event_dir": "${VLSG_TRAINING_OUT_DIR}/events"
+}
+[2023-12-21 21:22:55] [INFO] Tensorboard is enabled. Write events to ${VLSG_TRAINING_OUT_DIR}/events.
+[2023-12-21 21:22:55] [INFO] Using Single-GPU mode

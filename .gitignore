@@ -6,3 +6,6 @@ test/
 
 # checkpoint
 checkpoint/*
+
+# implementation
+implementation/*

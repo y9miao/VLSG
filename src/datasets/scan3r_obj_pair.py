@@ -100,6 +100,10 @@ class PatchObjectPairDataSet(data.Dataset):
                 data_item_dict['scan_id'] = scan_id
                 data_items.append(data_item_dict)
                 
+        # if debug with single scan
+        if self.cfg.mode == "debug_few_scan":
+            return data_items[:1]
+        
         return data_items
     
     def __getitem__(self, idx):
