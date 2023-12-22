@@ -15,6 +15,7 @@ def update_config(cfg, filename, ensure_dir=True):
     Scan3R_ROOT_DIR = os.getenv('Scan3R_ROOT_DIR')
     VLSG_SPACE = os.getenv('VLSG_SPACE')
     VLSG_TRAINING_OUT_DIR = os.getenv('VLSG_TRAINING_OUT_DIR')
+    RESUME_DIR = os.getenv('RESUME_DIR')
     # data root
     cfg.data.root_dir = Scan3R_ROOT_DIR
     # backbone files
@@ -22,7 +23,8 @@ def update_config(cfg, filename, ensure_dir=True):
     cfg.model.backbone.pretrained = osp.join(VLSG_SPACE, cfg.model.backbone.pretrained)
     # output dir
     cfg.output_dir = VLSG_TRAINING_OUT_DIR
-    cfg.other.resume = osp.join(VLSG_TRAINING_OUT_DIR, cfg.other.resume)
+    # resume dir 
+    cfg.other.resume = osp.join(RESUME_DIR, cfg.other.resume)
     
     if ensure_dir:
         cfg.snapshot_dir = osp.join(cfg.output_dir, 'snapshots')

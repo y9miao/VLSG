@@ -54,6 +54,7 @@ class Trainer(EpochBasedTrainer):
         # log step for training
         if self.cfg.train.log_steps:
             self.log_steps = self.cfg.train.log_steps
+        self.snapshot_steps = self.cfg.train.snapshot_steps
         self.logger.info('Initialisation Complete')
         
     def registerPatchObjectAlignerFromCfg(self, cfg):

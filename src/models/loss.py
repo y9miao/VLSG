@@ -3,11 +3,12 @@ from torch import nn
 import torch.nn.functional as F
 
 class ICLLoss(nn.Module):
-    def __init__(self, temperature=0.1, alpha = 0.5, epsilon=1e-8):
+    def __init__(self, temperature=0.1, alpha = 0.5, epsilon=1e-8, return_sim = False):
         super(ICLLoss, self).__init__()
         self.temp = temperature
         self.alpha = alpha
         self.epsilon = epsilon
+        self.return_sim = return_sim
     
     def forward(self, embs, data_dict):
         patch_features = embs['patch_features'] # (B, P_H, P_W, C*)
@@ -17,6 +18,7 @@ class ICLLoss(nn.Module):
         # calculate patch loss for each batch
         loss_batch = None
         matched_success_batch = None
+        patch_obj_sim_batch = []
         batch_size = data_dict['batch_size']
         for batch_i in range(batch_size):
             # patch features per batch
@@ -56,14 +58,18 @@ class ICLLoss(nn.Module):
                 matched_obj_labels = matched_obj_labels[e1i_valid]
                 matched_success_batch = matched_obj_labels if matched_success_batch is None \
                     else torch.cat((matched_success_batch, matched_obj_labels), dim=0)
+                    
+            # save exp similarity of patch-object and patch-patch
+            patch_obj_sim_batch.append(patch_patch_sim_exp)
         
-        if loss_batch is not None:
-            return {
-                'loss': loss_batch.mean(),
-                'matched_success_ratio': matched_success_batch.float().mean()
-            }
+        loss_dict =  {
+            'loss': loss_batch.mean() if loss_batch is not None else 0.,
+            'matched_success_ratio': matched_success_batch.float().mean() \
+                if loss_batch is not None else 0.
+        }
+        
+        if self.return_sim:
+            return loss_dict, patch_obj_sim_batch
         else:
-            return {
-                'loss': 0.,
-                'matched_success_ratio': 0.
-            }
+            return loss_dict
+        

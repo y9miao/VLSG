@@ -126,7 +126,8 @@ class EpochBasedTrainer(BaseTrainer):
         if self.scheduler is not None:
             self.scheduler.step()
         # snapshot
-        self.save_snapshot(f'epoch-{self.epoch}.pth.tar')
+        if self.epoch % self.snapshot_steps == 0:
+            self.save_snapshot(f'epoch-{self.epoch}.pth.tar')
 
     def inference_epoch(self):
         self.set_eval_mode()
