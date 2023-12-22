@@ -9,3 +9,6 @@ checkpoint/*
 
 # implementation
 implementation/*
+
+# pycache
+__pycache__/
