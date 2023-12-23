@@ -84,6 +84,7 @@ train:
   freeze_backbone: True
   use_pretrained: False
   log_steps: 1
+  snapshot_steps: 100
   optim:
     lr: 0.001
     lr_decay: 0.95
@@ -92,6 +93,10 @@ train:
     max_epoch: 10000
     free_backbone_epoch: 10000 # freeze backbone until certain epochs
     grad_acc_steps: 1
+  return_sim: True # for vis
+  # for vis
+  use_vis: False
+  vis_epoch_steps: 100
 # for validation
 val:
   batch_size: 1
@@ -100,6 +105,7 @@ val:
 other:
   use_resume: False
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
-  resume: "./snapshots/epoch-50.pth.tar" 
+  resume_folder: ""
+  resume: "./snapshots/epoch-1747.pth.tar" 
 # others
 seed: 42

@@ -6,6 +6,11 @@ from utils import common
 
 _C = CN()
 
+# for training
+_C.train = CN()
+_C.train.use_vis = False
+_C.train.vis_epoch_steps = 10000
+
 def update_config(cfg, filename, ensure_dir=True):
     cfg.defrost()
     cfg.set_new_allowed(True)

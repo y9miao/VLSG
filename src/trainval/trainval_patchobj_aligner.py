@@ -21,6 +21,7 @@ from mmcv import Config
 # from models.GCVit.models import gc_vit
 from models.patch_obj_aligner import PatchObjectAligner
 from models.loss import ICLLoss
+from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 
 
 
@@ -56,6 +57,9 @@ class Trainer(EpochBasedTrainer):
             self.log_steps = self.cfg.train.log_steps
         self.snapshot_steps = self.cfg.train.snapshot_steps
         self.logger.info('Initialisation Complete')
+        
+        # register visualiser
+        self.registerVisuliser(cfg)
         
     def registerPatchObjectAlignerFromCfg(self, cfg):
         # load backbone
@@ -110,7 +114,13 @@ class Trainer(EpochBasedTrainer):
         self.params = [{'params' : list( filter(lambda p: p.requires_grad, self.model.parameters()) ) }]
         self.optimizer = optim.Adam(self.params, lr=cfg.train.optim.lr, 
                                     weight_decay=cfg.train.optim.weight_decay)
-        
+
+    def registerVisuliser(self, cfg):
+        if cfg.train.use_vis:
+            self.result_visualizer = PatchObjectPairVisualizer(cfg)
+        else:
+            self.result_visualizer = None
+
     def freezeBackboneParams(self):
         for param in self.model.backbone.parameters():
             param.requires_grad = False
@@ -130,6 +140,11 @@ class Trainer(EpochBasedTrainer):
         embeddings = self.model(data_dict)
         loss_dict = self.loss(embeddings, data_dict)
         return embeddings, loss_dict
+    
+    def after_train_step(self, epoch, iteration, data_dict, output_dict, result_dict):
+        # visualize result and save
+        if self.cfg.train.use_vis and epoch % self.cfg.train.vis_epoch_steps == 0:
+            self.result_visualizer.visualize(data_dict, output_dict, epoch)
 
     def val_step(self, epoch, iteration, data_dict):
         embeddings = self.model(data_dict)
