@@ -41,6 +41,26 @@ def _to_channel_first(x):
     return x.permute(0, 3, 1, 2)
 
 
+def nn_Linear_batched(model, x, max_batch_size=1024*1024//4):
+    B_, N, C = x.shape
+    # if B_*N is larger than 1024*1024/4, nn.Linear will raise Error
+    # so we split B_ into multiple parts if B_*N is larger than 1024*1024/4
+    if B_*N > max_batch_size:
+        qkv_list = []
+        size_mini_batch = max_batch_size//N
+        num_mini_batch = B_//size_mini_batch
+        mini_batch_i = 0
+        for mini_batch_i in range(num_mini_batch):
+            qkv_list.append(model(x[mini_batch_i*size_mini_batch:(mini_batch_i+1)*size_mini_batch]))
+        if (mini_batch_i+1)*size_mini_batch < B_:
+            qkv_list.append(model(x[(mini_batch_i+1)*size_mini_batch:]))
+        # concat qkv_list
+        qkv = torch.cat(qkv_list, dim=0)
+    else:
+        qkv = model(x)
+        
+    return qkv
+
 class SE(nn.Module):
     """
     Squeeze and excitation block
@@ -253,7 +273,7 @@ class WindowAttention(nn.Module):
     def forward(self, x, q_global):
         B_, N, C = x.shape
         head_dim = C // self.num_heads
-        qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, head_dim).permute(2, 0, 3, 1, 4)
+        qkv = nn_Linear_batched(self.qkv, x).reshape(B_, N, 3, self.num_heads, head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
         q = q * self.scale
         attn = (q @ k.transpose(-2, -1))
@@ -267,7 +287,7 @@ class WindowAttention(nn.Module):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
-        x = self.proj(x)
+        x = nn_Linear_batched(self.proj, x)
         x = self.proj_drop(x)
         return x
 
@@ -291,7 +311,23 @@ class WindowAttentionGlobal(nn.Module):
                  ):
         """
         Args:
-            dim: feature size dimension.
+            dim: feature size dimension.    def qkv_batched(self, x, max_batch_size=1024*1024//4):
+        B_, N, C = x.shape
+        # if B_*N is larger than 1024*1024/4, nn.Linear will raise Error
+        # so we split B_ into multiple parts if B_*N is larger than 1024*1024/4
+        if B_*N > max_batch_size:
+            qkv_list = []
+            size_mini_batch = max_batch_size//N
+            num_mini_batch = B_//size_mini_batch
+            mini_batch_i = 0
+            for mini_batch_i in range(num_mini_batch):
+                qkv_list.append(self.qkv(x[mini_batch_i*size_mini_batch:(mini_batch_i+1)*size_mini_batch]))
+            if (mini_batch_i+1)*size_mini_batch < B_:
+                qkv_list.append(self.qkv(x[(mini_batch_i+1)*size_mini_batch:]))
+            # concat qkv_list
+            qkv = torch.cat(qkv_list, dim=0)
+        else:
+            qkv = self.qkv(x)
             num_heads: number of attention head.
             window_size: window size.
             qkv_bias: bool argument for query, key, value learnable bias.
@@ -327,13 +363,14 @@ class WindowAttentionGlobal(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
         self.softmax = nn.Softmax(dim=-1)
-
+            
     def forward(self, x, q_global):
         B_, N, C = x.shape
         B = q_global.shape[0]
         head_dim = C // self.num_heads
         B_dim = B_//B
-        kv = self.qkv(x).reshape(B_, N, 2, self.num_heads, head_dim).permute(2, 0, 3, 1, 4)
+
+        kv = nn_Linear_batched(self.qkv, x).reshape(B_, N, 2, self.num_heads, head_dim).permute(2, 0, 3, 1, 4)
         k, v = kv[0], kv[1]
         q_global = q_global.repeat(1, B_dim, 1, 1, 1)
         q = q_global.reshape(B_, self.num_heads, N, head_dim)
@@ -349,7 +386,7 @@ class WindowAttentionGlobal(nn.Module):
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
-        x = self.proj(x)
+        x = nn_Linear_batched(self.proj, x)
         x = self.proj_drop(x)
         return x
 
