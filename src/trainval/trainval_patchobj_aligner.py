@@ -49,6 +49,9 @@ class Trainer(EpochBasedTrainer):
         # optimizer
         self.registerOptim(cfg)
         
+        # freeze backbone params if required
+        self.freezeBackboneParams(cfg)
+        
         # generate loss
         self.loss = ICLLoss()
         
@@ -100,18 +103,15 @@ class Trainer(EpochBasedTrainer):
         # model to cuda 
         self.model.to(self.device)
         
-        # freeze backbone params if required
-        self.free_backbone_epoch = cfg.train.optim.free_backbone_epoch
-        if (self.free_backbone_epoch > 0):
-            self.freezeBackboneParams()
-        
         # log
         message = 'Model description:\n' + str(self.model)
         self.logger.info(message)      
 
     def registerOptim(self, cfg):  
         # only optimise params that require grad
-        self.params = [{'params' : list( filter(lambda p: p.requires_grad, self.model.parameters()) ) }]
+        self.params_register = list( filter(lambda p: p.requires_grad, self.model.parameters()) )
+        self.params_register_ids = list(map(id, self.params_register))
+        self.params = [{'params' :  self.params_register}]
         self.optimizer = optim.Adam(self.params, lr=cfg.train.optim.lr, 
                                     weight_decay=cfg.train.optim.weight_decay)
 
@@ -121,16 +121,20 @@ class Trainer(EpochBasedTrainer):
         else:
             self.result_visualizer = None
 
-    def freezeBackboneParams(self):
-        for param in self.model.backbone.parameters():
-            param.requires_grad = False
+    def freezeBackboneParams(self, cfg):
+        # freeze backbone params if required
+        self.free_backbone_epoch = cfg.train.optim.free_backbone_epoch
+        if (self.free_backbone_epoch > 0):
+            for param in self.model.backbone.parameters():
+                param.requires_grad = False
             
     def defreezeBackboneParams(self):
         for param in self.model.backbone.parameters():
             param.requires_grad = True
-        # update optimiser
-        bacbone_params = [{'params' : list( filter(lambda p: p.requires_grad, self.model.backbone.parameters()) ) }]
-        self.optimizer.add_param_group(bacbone_params)
+            # # update optimiser
+            # if id(param) not in self.params_register_ids:
+            #     self.params_register.append( id(param) )
+            #     self.optimizer.add_param_group( {'params' :  param } )
 
     def getDataLoader(self, cfg):
         train_dataloader, val_dataloader = get_train_val_data_loader(cfg)
