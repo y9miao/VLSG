@@ -49,7 +49,7 @@ class Scan3RIMGProjector():
         common.ensure_dir(self.save_obj_dir)
       
     def __len__(self):
-        return len(self.anchor_data)
+        return len(self.scan_ids)
 
     def project(self, scan_idx, step = 1):
         # get related files

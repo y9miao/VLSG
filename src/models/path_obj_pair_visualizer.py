@@ -53,6 +53,10 @@ class PatchObjectPairVisualizer:
                 scan_objs_color[int(obj_info['id'])] = color_rgb
             self.scans_objs_color[scan_id] = scan_objs_color
             
+        # limit the number of scans to visualize
+        self.scan_id_limit = 10
+        self.scan_ids = set()
+            
     def visualize(self, data_dict, embs, epoch):
         
         # generate and save visualized image for each data item in batch for each iteration
@@ -60,6 +64,14 @@ class PatchObjectPairVisualizer:
         patch_obj_sim_batch = embs['patch_obj_sim']
         for batch_i in range(batch_size):
             scan_id = data_dict['scan_ids'][batch_i]
+            
+            # first come first serve until scan_id_limit
+            if scan_id not in self.scan_ids:
+                if len(self.scan_ids) <= self.scan_id_limit:
+                    self.scan_ids.add(scan_id)
+                else:
+                    continue
+            
             frame_idx = data_dict['frame_idxs'][batch_i]
             
             obj_3D_id2idx = data_dict['obj_3D_id2idx'][batch_i]

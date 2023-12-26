@@ -6,6 +6,28 @@ from utils import common
 
 _C = CN()
 
+# dataset
+_C.data = CN()
+_C.data.name = "Scan3R"
+_C.data.root_dir = ""
+_C.data.rescan = False
+
+_C.data.img = CN()
+_C.data.img.img_step = 5
+_C.data.img.w = 960
+_C.data.img.h = 540
+
+_C.data.img_encoding = CN()
+_C.data.img_encoding.resize_w = 1024
+_C.data.img_encoding.img_rotate: True # rotate w,h for backbone GCVit
+_C.data.img_encoding.patch_w: 16 # number of patchs in width
+_C.data.img_encoding.patch_h: 9
+
+_C.data.img.cross_scene = CN()
+_C.data.img.cross_scene.use_cross_scene = True
+_C.data.img.cross_scene.num_scenes = 10
+_C.data.img.cross_scene.num_negative_samples = -1 # -1 means 
+
 # for training
 _C.train = CN()
 _C.train.use_vis = False

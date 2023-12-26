@@ -62,17 +62,11 @@ class ICLLoss(nn.Module):
                 if loss_batch is not None else 0.
         }
         
-        # if self.return_sim:
-        #     return loss_dict, patch_obj_sim_batch
-        # else:
-        #     return loss_dict
-        
         return loss_dict
     
-    
-class ICLLossCross(nn.Module):
+class RoomRetrivalLoss(nn.Module):
     def __init__(self, temperature=0.1, alpha = 0.5, epsilon=1e-8):
-        super(ICLLossCross, self).__init__()
+        super(RoomRetrivalLoss, self).__init__()
         self.temp = temperature
         self.alpha = alpha
         self.epsilon = epsilon
@@ -129,11 +123,6 @@ class ICLLossCross(nn.Module):
             'matched_success_ratio': matched_success_batch.float().mean() \
                 if loss_batch is not None else 0.
         }
-        
-        # if self.return_sim:
-        #     return loss_dict, patch_obj_sim_batch
-        # else:
-        #     return loss_dict
         
         return loss_dict
         
