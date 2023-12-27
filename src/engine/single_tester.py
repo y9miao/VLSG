@@ -35,7 +35,7 @@ class SingleTester(BaseTester):
 
     def run(self):
         assert self.test_loader is not None
-        self.load_snapshot(self.args.snapshot)
+        assert self.model is not None
         self.model.eval()
         torch.set_grad_enabled(False)
         self.before_test_epoch()

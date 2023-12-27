@@ -53,7 +53,7 @@ class Trainer(EpochBasedTrainer):
         self.freezeBackboneParams(cfg)
         
         # generate loss
-        self.loss = ICLLoss()
+        self.loss = ICLLoss(return_sim=cfg.train.return_sim)
         
         # log step for training
         if self.cfg.train.log_steps:
@@ -142,13 +142,15 @@ class Trainer(EpochBasedTrainer):
 
     def train_step(self, epoch, iteration, data_dict):
         embeddings = self.model(data_dict)
+        
+        
         loss_dict = self.loss(embeddings, data_dict)
         return embeddings, loss_dict
     
     def after_train_step(self, epoch, iteration, data_dict, output_dict, result_dict):
         # visualize result and save
-        if self.cfg.train.use_vis and epoch % self.cfg.train.vis_epoch_steps == 0:
-            self.result_visualizer.visualize(data_dict, output_dict, epoch)
+        if self.cfg.train.use_vis:
+            self.result_visualizer.visualize(data_dict, output_dict['patch_obj_sim'], epoch)
 
     def val_step(self, epoch, iteration, data_dict):
         embeddings = self.model(data_dict)

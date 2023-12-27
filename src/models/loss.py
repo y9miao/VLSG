@@ -126,3 +126,5 @@ class RoomRetrivalLoss(nn.Module):
         
         return loss_dict
         
+        # return loss_dict
+        

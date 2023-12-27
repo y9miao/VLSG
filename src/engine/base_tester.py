@@ -24,14 +24,14 @@ class BaseTester(abc.ABC):
         message = 'Command executed: ' + ' '.join(sys.argv)
         self.logger.info(message)
 
-        # find snapshot
-        if self.args.snapshot is None:
-            if self.args.test_epoch is not None:
-                self.args.snapshot = osp.join(cfg.snapshot_dir, 'epoch-{}.pth.tar'.format(self.args.test_epoch))
-            elif self.args.test_iter is not None:
-                self.args.snapshot = osp.join(cfg.snapshot_dir, 'iter-{}.pth.tar'.format(self.args.test_iter))
-        if self.args.snapshot is None:
-            raise RuntimeError('Snapshot is not specified.')
+        # # find snapshot
+        # if self.args.snapshot is None:
+        #     if self.args.test_epoch is not None:
+        #         self.args.snapshot = osp.join(cfg.snapshot_dir, 'epoch-{}.pth.tar'.format(self.args.test_epoch))
+        #     elif self.args.test_iter is not None:
+        #         self.args.snapshot = osp.join(cfg.snapshot_dir, 'iter-{}.pth.tar'.format(self.args.test_iter))
+        # if self.snapshot is None:
+        #     raise RuntimeError('Snapshot is not specified.')
 
         # print config
         message = 'Configs:\n' + json.dumps(cfg, indent=4)
