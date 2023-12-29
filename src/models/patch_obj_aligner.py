@@ -110,6 +110,7 @@ class PatchObjectAligner(nn.Module):
         obj_3D_features_list = []
         patch_obj_sim_list = []
         patch_patch_sim_list = []
+        obj_obj_sim_list = []
         for batch_i in range(batch_size):
             # get patch and obj features
             obj_embeddings = data_dict['obj_3D_embeddings_list'][batch_i] 
@@ -129,12 +130,15 @@ class PatchObjectAligner(nn.Module):
             # calculate patch-patch similarity (N_P, N_P); N_P = P_H*P_W
             patch_patch_sim = torch.mm(patch_features_pb_norm, patch_features_pb_norm.permute(1, 0))
             patch_patch_sim_list.append(patch_patch_sim)
-        
+            # calculate obj-obj similarity (O, O)
+            obj_obj_sim = torch.mm(obj_features_pb_norm, obj_features_pb_norm.permute(1, 0))
+            obj_obj_sim_list.append(obj_obj_sim)
         embs = {}
         embs['patch_features'] = patch_features # (B, P_H*P_W, C*)
         embs['obj_features'] = obj_3D_features_list # B - [O, C*]
         embs['patch_obj_sim'] = patch_obj_sim_list # B - [P_H*P_W, O]
         embs['patch_patch_sim'] = patch_patch_sim_list # B - [P_H*P_W, P_H*P_W]
+        embs['obj_obj_sim'] = obj_obj_sim_list # B - [O, O]
         
         return embs
 

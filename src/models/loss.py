@@ -66,7 +66,7 @@ class ICLLoss(nn.Module):
     
 class ICLLossBothSides(nn.Module):
     def __init__(self, temperature=0.1, alpha = 0.5, epsilon=1e-8):
-        super(ICLLoss, self).__init__()
+        super(ICLLossBothSides, self).__init__()
         self.temp = temperature
         self.alpha = alpha
         self.epsilon = epsilon
@@ -76,7 +76,8 @@ class ICLLossBothSides(nn.Module):
         obj_features = embs['obj_features']  # # B - [O, C*]
         patch_obj_sim_list = embs['patch_obj_sim'] # B - [P_H*P_W, O]
         patch_patch_sim_list = embs['patch_patch_sim'] # B - [P_H*P_W, P_H*P_W]
-
+        obj_obj_sim_list = embs['obj_obj_sim'] # B - [O, O]
+        
         # calculate patch loss for each batch
         loss_batch = None
         matched_success_batch = None
@@ -98,17 +99,33 @@ class ICLLossBothSides(nn.Module):
             delta_E1i_E2i = (e1i_matrix * patch_obj_sim_exp).sum(dim=-1) # (N_P)
             sum_delta_E1i_E1j = (e1j_matrix * patch_patch_sim_exp).sum(dim=-1) # (N_P)
             sum_delta_E1i_E2j = (e2j_matrix * patch_obj_sim_exp).sum(dim=-1) # (N_P)
-            loss_patch_side = delta_E1i_E2i / (delta_E1i_E2i + sum_delta_E1i_E1j + sum_delta_E1i_E2j + self.epsilon)
-            
-            # calculate 3D-to-2D loss
-            f1i = e1i_matrix.transpose(0,1) # (O, N_P)
+            loss_patch_side = delta_E1i_E2i / (delta_E1i_E2i + sum_delta_E1i_E1j + sum_delta_E1i_E2j + self.epsilon) # (N_P)
             
             # mask out unmatched patches
             e1i_valid = e1i_matrix.sum(dim=-1) > 0 # (N_P)
             
+            # calculate 3D-to-2D loss
+            obj_obj_sim = obj_obj_sim_list[batch_i] # (O, O)
+            obj_obj_sim_exp = torch.exp(obj_obj_sim / self.temp)
+            num_objs = e1i_matrix.shape[1]
+            f1i = e1i_matrix.transpose(0,1) # (O, N_P)
+            f1j = (torch.ones((num_objs, num_objs),device = obj_obj_sim.device) - \
+                torch.eye(num_objs, device = obj_obj_sim.device)) # (O, O)
+            f2j = e2j_matrix.transpose(0,1) # (O, N_P)
+            
+            delta_F1i_F2i = delta_E1i_E2i # (N_P)
+            gt_matched_obj_idxs = torch.argmax(e1i_matrix, dim=1).reshape(-1,1) # (N_P,1)
+            delta_F1i_F1j_all_objs = (f1j * obj_obj_sim_exp).sum(dim=-1).reshape(-1,1) # (O,1)
+            sum_delta_F1i_F1j = delta_F1i_F1j_all_objs.gather(0, gt_matched_obj_idxs).reshape(-1) # (N_P,1)
+            obj_patch_sim_exp = patch_obj_sim_exp.transpose(0,1) # (O, N_P)
+            delta_F1i_F2j_all_objs = (f2j * obj_patch_sim_exp).sum(dim=-1).reshape(-1,1) # (O,1)
+            sum_delta_F1i_F2j = delta_F1i_F2j_all_objs.gather(0, gt_matched_obj_idxs).reshape(-1) # (N_P,1)
+            loss_obj_side = delta_F1i_F2i / (delta_F1i_F2i + sum_delta_F1i_F1j + sum_delta_F1i_F2j + self.epsilon) # (N_P)
+            
             if e1i_valid.any():
-                loss_patch_side = loss_patch_side[e1i_valid]
-                loss = -torch.log(loss_patch_side + self.epsilon)
+                loss_both_sides = loss_patch_side[e1i_valid] * self.alpha + \
+                    loss_obj_side[e1i_valid] * (1 - self.alpha)
+                loss = -torch.log(loss_both_sides + self.epsilon)
                 loss_batch = loss if loss_batch is None else torch.cat((loss_batch, loss), dim=0)
         
                 # calculate match success ratio
