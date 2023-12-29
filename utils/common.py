@@ -133,6 +133,24 @@ def name2idx(file_name):
     
     return name2idx
 
+def idx2name(file_name):
+    idx2name = {}
+    with open(file_name) as f:
+        lines = f.read().splitlines()
+        for line in lines:
+            split_str = line.split('	')
+            idx = split_str[0]
+            name = split_str[-1]
+            idx2name[int(idx)] = name
+    return idx2name
+
 def get_key_by_value(dictionary, value):
     for key, values in dictionary.items():
         if value in values: return key
+
+# calculate average of a list
+def ave_list(lists):
+    if len(lists) == 0:
+        return 0
+    else:
+        return sum(lists)*1.0/len(lists)

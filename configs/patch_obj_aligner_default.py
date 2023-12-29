@@ -23,15 +23,38 @@ _C.data.img_encoding.img_rotate: True # rotate w,h for backbone GCVit
 _C.data.img_encoding.patch_w: 16 # number of patchs in width
 _C.data.img_encoding.patch_h: 9
 
-_C.data.img.cross_scene = CN()
-_C.data.img.cross_scene.use_cross_scene = True
-_C.data.img.cross_scene.num_scenes = 10
-_C.data.img.cross_scene.num_negative_samples = -1 # -1 means 
+_C.data.cross_scene = CN()
+_C.data.cross_scene.use_cross_scene = True
+_C.data.cross_scene.num_scenes = 10
+_C.data.cross_scene.num_negative_samples = -1 # -1 means 
 
 # for training
 _C.train = CN()
+_C.train.batch_size = 1
+_C.train.num_workers = 1
+_C.train.freeze_backbone = True
+_C.train.use_pretrained = False
+_C.train.log_steps = 1
+_C.train.snapshot_steps = 100
+_C.train.optim = CN()
+_C.train.optim.lr = 0.001
+_C.train.optim.scheduler = 'step'
+## for stepLr
+_C.train.optim.lr_decay = 0.95
+_C.train.optim.lr_decay_steps = 10
+## for CosineAnnealingLR
+_C.train.optim.lr_min = 0.001
+_C.train.optim.T_max = 1000
+_C.train.optim.T_mult = 1
+## 
+_C.train.optim.weight_decay = 0.0001
+_C.train.optim.max_epoch = 10000
+_C.train.optim.free_backbone_epoch = 10000
+_C.train.optim.grad_acc_steps = 1
+
 _C.train.use_vis = False
 _C.train.vis_epoch_steps = 10000
+
 
 def update_config(cfg, filename, ensure_dir=True):
     cfg.defrost()
@@ -61,6 +84,35 @@ def update_config(cfg, filename, ensure_dir=True):
         common.ensure_dir(cfg.snapshot_dir)
         common.ensure_dir(cfg.log_dir)
         common.ensure_dir(cfg.event_dir)
+    cfg.freeze()
+    
+    return cfg
+
+def update_config_room_retrival(cfg, filename, ensure_dir=True):
+    cfg.defrost()
+    cfg.set_new_allowed(True)
+    cfg.merge_from_file(filename)
+    
+    # load dirs from env variables because CFG node doesn't support env variables
+    Scan3R_ROOT_DIR = os.getenv('Scan3R_ROOT_DIR')
+    VLSG_SPACE = os.getenv('VLSG_SPACE')
+    ROOM_RETRIEVAL_OUT_DIR = os.getenv('ROOM_RETRIEVAL_OUT_DIR')
+    RESUME_DIR = os.getenv('RESUME_DIR')
+    # data root
+    cfg.data.root_dir = Scan3R_ROOT_DIR
+    # backbone files
+    cfg.model.backbone.cfg_file = osp.join(VLSG_SPACE, cfg.model.backbone.cfg_file)
+    cfg.model.backbone.pretrained = osp.join(VLSG_SPACE, cfg.model.backbone.pretrained)
+    # output dir
+    cfg.output_dir = ROOM_RETRIEVAL_OUT_DIR
+    # resume dir 
+    cfg.other.resume = osp.join(RESUME_DIR, cfg.other.resume)
+    
+    if ensure_dir:
+        common.ensure_dir(osp.join(cfg.output_dir, cfg.val.method_name))
+        cfg.log_dir = osp.join(cfg.output_dir, cfg.val.method_name, 'logs')
+        common.ensure_dir(cfg.log_dir)
+
     cfg.freeze()
     
     return cfg

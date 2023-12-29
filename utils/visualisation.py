@@ -45,3 +45,28 @@ def visualise_point_cloud_registration(src_points, ref_points, gt_transform, est
     open3d.draw_geometries(ref_point_cloud, deepcopy(src_point_cloud).transform(gt_transform))
     open3d.draw_geometries(ref_point_cloud, deepcopy(src_point_cloud).transform(est_transform))
 
+def plotBar(metric_title, x_label, y_label, labels, metric_values, 
+            method_names, fig_path, figsize=(12, 9), x_rotation=0):
+    # metric_values m x l, m for different methods, l for different semantic classes
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.tick_params(axis='both', which='major', labelsize=14)
+
+    metric_values = np.array(metric_values).reshape(len(method_names), -1)
+    num_methods = metric_values.shape[0]
+    num_labels = metric_values.shape[1]
+    bar_width = min(0.08, 1.0/(num_methods*2) )
+    bars = {}
+
+    for m_i in range(num_methods):
+        bar_shift = m_i-num_methods/2.0
+        bars[m_i] = ax.bar(x + bar_width*bar_shift, metric_values[m_i], bar_width, label=method_names[m_i])
+
+    ax.set_ylabel(y_label, fontsize=16)
+    ax.set_xlabel(x_label, fontsize=16)
+    ax.set_title(metric_title)
+    ax.set_xticks(x, rotation=x_rotation)
+    ax.set_xticklabels(labels, rotation = x_rotation)
+    ax.legend(loc='upper left', fontsize=12)
+    fig.tight_layout()
+    fig.savefig(fig_path, bbox_inches='tight')

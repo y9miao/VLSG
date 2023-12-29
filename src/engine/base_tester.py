@@ -14,7 +14,7 @@ from utils.timer import Timer
 class BaseTester(abc.ABC):
     def __init__(self, cfg, parser=None, cudnn_deterministic=True):
         # parser
-        self.args = parser.parse_args()
+        # self.args = parser.parse_args()
 
         # logger
         log_file = osp.join(cfg.log_dir, 'test-{}.log'.format(time.strftime('%Y%m%d-%H%M%S')))

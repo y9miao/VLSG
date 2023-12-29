@@ -22,8 +22,8 @@ class SummaryBoard:
         if names is not None:
             self.register_all(names)
 
-    def register_meter(self, name):
-        self.meter_dict[name] = AverageMeter()
+    def register_meter(self, name, last_n=None):
+        self.meter_dict[name] = AverageMeter(last_n)
         self.meter_names.append(name)
 
     def register_all(self, names):
@@ -48,12 +48,12 @@ class SummaryBoard:
         self.check_name(name)
         self.meter_dict[name].update(value)
 
-    def update_from_result_dict(self, result_dict):
+    def update_from_result_dict(self, result_dict, last_n=None):
         if not isinstance(result_dict, dict):
             raise TypeError('`result_dict` must be a dict: {}.'.format(type(result_dict)))
         for key, value in result_dict.items():
             if key not in self.meter_names and self.adaptive:
-                self.register_meter(key)
+                self.register_meter(key, last_n)
             if key in self.meter_names:
                 self.meter_dict[key].update(value)
 

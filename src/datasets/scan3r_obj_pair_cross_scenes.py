@@ -283,6 +283,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['e1i_matrix'] = e1i_matrix
         data_dict['e1j_matrix'] = e1j_matrix
         data_dict['e2j_matrix'] = e2j_matrix
+        data_dict['obj_2D_patch_anno_flatten'] = obj_2D_patch_anno_flatten
         return data_dict
     
     def collate_fn(self, batch):
@@ -300,7 +301,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['num_objs'] = [data['num_objs'] for data in batch]
         data_dict['num_objs_across_scenes'] = [data['num_objs_across_scenes'] for data in batch]
         data_dict['obj_3D_id2idx'] = [data['obj_3D_id2idx'] for data in batch]
-        data_dict['obj_3D_idx2info'] = \
+        data_dict['obj_3D_idx2info_list'] = \
             [data['obj_3D_idx2info'] for data in batch]
         obj_3D_embeddings_list = [data['obj_3D_embeddings_arr'] for data in batch]
         data_dict['obj_3D_embeddings_list'] = [torch.from_numpy(obj_3D_embeddings).float()
@@ -309,7 +310,8 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['e1i_matrix_list'] = [ torch.from_numpy(data['e1i_matrix']) for data in batch]  # B - [N_P, N_O]
         data_dict['e1j_matrix_list'] = [ torch.from_numpy(data['e1j_matrix']) for data in batch]  # B - [N_P, N_P]
         data_dict['e2j_matrix_list'] = [ torch.from_numpy(data['e2j_matrix']) for data in batch]  # B - [N_P, N_O]
-        
+        data_dict['obj_2D_patch_anno_flatten_list'] = \
+            [ torch.from_numpy(data['obj_2D_patch_anno_flatten']) for data in batch] # B - [N_P]
         return data_dict
         
     def __len__(self):

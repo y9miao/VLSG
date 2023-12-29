@@ -60,5 +60,5 @@ class SingleTester(BaseTester):
         
         self.after_test_epoch()
 
-        self.print_metrics(results_dict)
+        # self.print_metrics(results_dict)
 

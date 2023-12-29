@@ -93,13 +93,14 @@ class EpochBasedTrainer(BaseTrainer):
             result_dict['loss'].backward(retain_graph=True)
             self.after_backward(self.epoch, self.inner_iteration, data_dict, output_dict, result_dict)
             self.check_gradients(self.epoch, self.inner_iteration, data_dict, output_dict, result_dict)
-            self.optimizer_step(self.inner_iteration)
 
             # after training
             self.timer.add_process_time()
             self.after_train_step(self.epoch, self.inner_iteration, data_dict, output_dict, result_dict)
             result_dict = self.release_tensors(result_dict)
             self.summary_board.update_from_result_dict(result_dict)
+            lr_dict = {'lr': self.get_lr()}
+            self.summary_board.update_from_result_dict(lr_dict, 1)
 
             # logging
             if self.inner_iteration % self.log_steps == 0:
@@ -117,6 +118,8 @@ class EpochBasedTrainer(BaseTrainer):
                 self.write_event('train', summary_dict, self.iteration)
             
             torch.cuda.empty_cache()
+            
+        self.optimizer_step(self.epoch)
         
         self.after_train_epoch(self.epoch)
         message = get_log_string(self.summary_board.summary(), epoch=self.epoch, timer=self.timer)
