@@ -60,6 +60,9 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         self.use_cross_scene = cfg.data.cross_scene.use_cross_scene
         self.num_scenes = cfg.data.cross_scene.num_scenes
         self.num_negative_samples = cfg.data.cross_scene.num_negative_samples
+        # if split is val, then use all object from other scenes as negative samples
+        if split == 'val':
+            self.num_negative_samples = -1
         
         # scans info
         self.scan_ids = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_scans.txt'.format(split)), dtype=str)
