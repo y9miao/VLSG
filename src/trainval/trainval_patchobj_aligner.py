@@ -3,10 +3,11 @@ import time
 import os
 from collections import OrderedDict
 import sys
+import numpy as np
 import subprocess
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ws_dir = os.path.dirname(parent_dir)
-sys.path.append(parent_dir)
+src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ws_dir = os.path.dirname(src_dir)
+sys.path.append(src_dir)
 sys.path.append(ws_dir)
 # config
 from configs import update_config, config
@@ -25,7 +26,8 @@ from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 # dataset
 from datasets.scan3r_obj_pair import PatchObjectPairDataSet
 from datasets.scan3r_obj_pair_cross_scenes import PatchObjectPairCrossScenesDataSet
-
+# utils
+from utils import common, scan3r
 
 
 class Trainer(EpochBasedTrainer):
@@ -158,10 +160,22 @@ class Trainer(EpochBasedTrainer):
         train_dataloader, val_dataloader = get_train_val_data_loader(cfg, dataset)
         return train_dataloader, val_dataloader
 
+    def model_forward(self, data_dict):
+        if self.cfg.data.img_encoding.use_feature:
+            embeddings = self.model.forward_with_patch_features(data_dict)
+        else:
+            embeddings = self.model(data_dict)
+            if self.cfg.data.img_encoding.record_feature:
+                patch_raw_features = embeddings['patch_raw_features'].detach().cpu().numpy()
+                for batch_i in range(data_dict['batch_size']):
+                    file_path = data_dict['patch_features_paths'][batch_i]
+                    file_parent_dir = os.path.dirname(file_path)
+                    common.ensure_dir(file_parent_dir)
+                    np.save(file_path, patch_raw_features[batch_i])   
+        return embeddings
+
     def train_step(self, epoch, iteration, data_dict):
-        embeddings = self.model(data_dict)
-        
-        
+        embeddings = self.model_forward(data_dict)
         loss_dict = self.loss(embeddings, data_dict)
         return embeddings, loss_dict
     
@@ -171,7 +185,7 @@ class Trainer(EpochBasedTrainer):
             self.result_visualizer.visualize(data_dict, output_dict, epoch)
 
     def val_step(self, epoch, iteration, data_dict):
-        embeddings = self.model(data_dict)
+        embeddings = self.model_forward(data_dict)
         loss_dict = self.loss(embeddings, data_dict)
         return embeddings, loss_dict
 

@@ -95,6 +95,23 @@ def load_frame_paths(data_dir, scan_id, skip=None):
         img_paths[frame_idx] = img_path
     return img_paths
 
+def load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip=None):
+    features_path = {}
+    frame_idxs = load_frame_idxs(osp.join(data_root_dir, "scenes"), scan_id, skip)
+    features_scan_folder = osp.join(feature_folder, scan_id)
+    for frame_idx in frame_idxs:
+        features_frame_file = osp.join(features_scan_folder, "frame-{}.npy".format(frame_idx))
+        features_path[frame_idx] = features_frame_file
+    return features_path
+
+def load_patch_features(data_root_dir, feature_folder, scan_id, skip=None):
+    features_path = load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip)
+    
+    features = {}
+    for frame_idx, feature_path in features_path.items():
+        features[frame_idx] = np.load(feature_path)
+    return features
+
 def load_gt_2D_anno(data_root_dir, scan_id, skip=None):
     anno_imgs = {}
     frame_idxs = load_frame_idxs(osp.join(data_root_dir, "scenes"), scan_id, skip)

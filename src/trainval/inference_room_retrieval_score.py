@@ -27,6 +27,10 @@ from datasets.scan3r_obj_pair_cross_scenes import PatchObjectPairCrossScenesData
 # models
 import torch
 import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as F
+
+
 from mmdet.models import build_backbone
 from mmcv import Config
 # from models.GCVit.models import gc_vit
@@ -35,13 +39,14 @@ from models.loss import ICLLoss
 from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 
 # use PathObjAligner for room retrieval
-class RoomRetrivalPatchObjAligner(SingleTester):
+class RoomRetrivalScore(SingleTester):
     def __init__(self, cfg):
         super().__init__(cfg, parser=None)
         
         # cfg
         self.cfg = cfg 
         self.method_name = cfg.val.room_retrieval.method_name
+        self.epsilon_th = cfg.val.room_retrieval.epsilon_th
         
         # files
         self.output_dir = osp.join(cfg.output_dir, self.method_name)
@@ -74,7 +79,7 @@ class RoomRetrivalPatchObjAligner(SingleTester):
         self.registerPatchObjectAlignerFromCfg(cfg)
         self.model.eval()
         
-        # result
+        # result for patch voting 
         self.patches_result_overall = {'correct': 0, 'total': 0} # overall patch match result
         self.patches_result_nyu = {} # patch match result per category (nyu)
         self.patches_result_scan_id = {} # patch match result per scan
@@ -83,6 +88,12 @@ class RoomRetrivalPatchObjAligner(SingleTester):
         self.room_retrieval_result = {'correct': 0, 'total': 0, 'correct_score': [], 
                                       'correct_match': []} # overall room retrieval result
         self.room_retrieval_scan_id = {} # room retrieval result per scan
+        
+        self.heter_obj_sgaligner_similarity = []
+        self.heter_obj_features_similarity = []
+        
+        # result for room score-based retrieval
+        self.room_retrieval_scores_result = {} # overall room retrieval result
         
     def registerPatchObjectAlignerFromCfg(self, cfg):
         # load backbone
@@ -179,9 +190,39 @@ class RoomRetrivalPatchObjAligner(SingleTester):
             self.room_retrieval_scan_id[scan_id]['correct_match'].append(
                 retrieval_info['num_votes_correct_match'] * 1.0/retrieval_info['total_votes'])
         self.room_retrieval_scan_id[scan_id]['total'] += 1
+        
+    def recordRoomRetrievalScoresResult(self, retrieval_info_scores):
+        for score_type in retrieval_info_scores.keys():
+            retrieval_info_score = retrieval_info_scores[score_type]
+            if score_type not in self.room_retrieval_scores_result:
+                self.room_retrieval_scores_result[score_type] = {
+                    'correct': 0, 'total': 0, 'score': [],'score_gt_scan': []}
+                
+            if retrieval_info_score['is_room_correct']:
+                self.room_retrieval_scores_result[score_type]['correct'] += 1
+            
+            self.room_retrieval_scores_result[score_type]['total'] += 1
+            self.room_retrieval_scores_result[score_type]['score'].append(
+                retrieval_info_score['score'] * 1.0)
+            self.room_retrieval_scores_result[score_type]['score_gt_scan'].append(
+                retrieval_info_score['correct_score'] * 1.0)
+
+    def model_forward(self, data_dict):
+        if self.cfg.data.img_encoding.use_feature:
+            embeddings = self.model.forward_with_patch_features(data_dict)
+        else:
+            embeddings = self.model(data_dict)
+            if self.cfg.data.img_encoding.record_feature:
+                patch_raw_features = embeddings['patch_raw_features'].detach().cpu().numpy()
+                for batch_i in range(data_dict['batch_size']):
+                    file_path = data_dict['patch_features_paths'][batch_i]
+                    file_parent_dir = os.path.dirname(file_path)
+                    common.ensure_dir(file_parent_dir)
+                    np.save(file_path, patch_raw_features[batch_i])   
+        return embeddings
 
     def test_step(self, iteration, data_dict):
-        output_dict = self.model(data_dict)
+        output_dict = self.model_forward(data_dict)
         return output_dict
     
     def eval_step(self, iteration, data_dict, output_dict):
@@ -209,6 +250,12 @@ class RoomRetrivalPatchObjAligner(SingleTester):
             ## gt annotation of obj idx
             obj_2D_patch_anno_flatten = \
                 data_dict['obj_2D_patch_anno_flatten_list'][batch_i]
+                
+            # get obj sim
+            heterogenous_obj_sgaligner_similarity, heterogenous_obj_features_similarity = \
+                self.calculateObjectSimilarity(data_dict, batch_i)
+            self.heter_obj_sgaligner_similarity.append(heterogenous_obj_sgaligner_similarity)
+            self.heter_obj_features_similarity.append(heterogenous_obj_features_similarity)
                 
             # patch_obj_sim
             patch_obj_sim = patch_obj_sim_list[batch_i]
@@ -268,10 +315,69 @@ class RoomRetrivalPatchObjAligner(SingleTester):
             # record room retrieval result
             self.recordRoomRetrievalResult(retrieval_info)
             breakpoint = 0
+            
+            # get room retrieval result by score
+            candata_scan_obj_idxs = data_dict['candate_scan_obj_idxs_list'][batch_i]
+            candidate_room_scores_1 = {} # score = sum( II(max_j(p_i, o_j) > epsilon) )
+            candidate_room_scores_2 = {} # score = sum( Score(p_i, o_j)[II(max_j(p_i, o_j) > epsilon)] )
+            candidate_room_scores_3 = {} # score = sum( max_j(p_i, o_j)  )
+            
+            for candidate_scan_id in candata_scan_obj_idxs.keys():
+                candidate_obj_idxs = candata_scan_obj_idxs[candidate_scan_id]
+                patch_candidate_obj_sim = patch_obj_sim[:, candidate_obj_idxs]
+                matched_candidate_obj_idxs = torch.argmax(patch_candidate_obj_sim, dim=1).reshape(-1,1) # (N_P)
+                matched_candidate_obj_sim = patch_candidate_obj_sim.gather(1, matched_candidate_obj_idxs)
+                
+                # get scores
+                matched_candidate_obj_valid = matched_candidate_obj_sim > self.epsilon_th
+                candidate_room_scores_1[candidate_scan_id] = torch.sum(matched_candidate_obj_valid)
+                candidate_room_scores_2[candidate_scan_id] = torch.sum(matched_candidate_obj_sim[matched_candidate_obj_valid])
+                candidate_room_scores_3[candidate_scan_id] = torch.sum(matched_candidate_obj_sim)
+            # get selected scan id given scores
+            selected_scan_id_score1 = max(candidate_room_scores_1, key=candidate_room_scores_1.get)
+            selected_scan_id_score2 = max(candidate_room_scores_2, key=candidate_room_scores_2.get)
+            selected_scan_id_score3 = max(candidate_room_scores_3, key=candidate_room_scores_3.get)
+            
+            retrieval_info_score1 = {
+                'scan_id': scan_id,
+                'score': candidate_room_scores_1[selected_scan_id_score1],
+                'is_room_correct': scan_id == selected_scan_id_score1,
+                'correct_score': candidate_room_scores_1[scan_id],
+            }
+            retrieval_info_score2 = {
+                'scan_id': scan_id,
+                'score': candidate_room_scores_2[selected_scan_id_score2],
+                'is_room_correct': scan_id == selected_scan_id_score2,
+                'correct_score': candidate_room_scores_2[scan_id],
+            }
+            retrieval_info_score3 = {
+                'scan_id': scan_id,
+                'score': candidate_room_scores_3[selected_scan_id_score3],
+                'is_room_correct': scan_id == selected_scan_id_score3,
+                'correct_score': candidate_room_scores_3[scan_id],
+            } 
+            retrieval_info_scores = {
+                'score1': retrieval_info_score1,
+                'score2': retrieval_info_score2,
+                'score3': retrieval_info_score3
+            }
+            self.recordRoomRetrievalScoresResult(retrieval_info_scores)
 
         self.recordImagePatchMatchAccuracy(matched_success_batch.float().mean())
             
     def after_test_epoch(self):
+        # save obj similarity
+        obj_sim_txt_file = osp.join(self.output_dir, 'obj_sim.txt')
+        obj_sim_lines = []
+        obj_sim_lines.append('heterogenous_obj_sgaligner_similarity: {:.3f}'.format(
+            np.mean(self.heter_obj_sgaligner_similarity)))
+        obj_sim_lines.append('heterogenous_obj_features_similarity: {:.3f}'.format(
+            np.mean(self.heter_obj_features_similarity)))
+        ## write to file
+        with open(obj_sim_txt_file, 'w') as f:
+            for line in obj_sim_lines:
+                f.write(line + '\n')
+        
         # save patch result
         meta_pkl_dir = osp.join(self.output_dir, 'meta')
         common.ensure_dir(meta_pkl_dir)
@@ -291,8 +397,9 @@ class RoomRetrivalPatchObjAligner(SingleTester):
         room_retrieval_result_scans_pkl = osp.join(meta_pkl_dir, 'room_retrieval_result_scans.pkl')
         common.write_pkl_data(self.room_retrieval_result, room_retrieval_result_pkl)
         common.write_pkl_data(self.room_retrieval_scan_id, room_retrieval_result_scans_pkl)
-        
+
         room_retrieval_out_scans_file = osp.join(self.output_dir, 'room_retrieval_accu_scans.txt')
+        room_retrieval_scores_file = osp.join(self.output_dir, 'room_retrieval_scores_scans.txt')
         
         # save and visualize patch result
         patches_result_cate_out_lines = []
@@ -369,7 +476,56 @@ class RoomRetrivalPatchObjAligner(SingleTester):
             for line in room_retrieval_scans_out_lines:
                 f.write(line + '\n')
                 
+        # save result of room retrieval by scores
+        room_retrieval_scores_lines = []
+        for score_type in self.room_retrieval_scores_result.keys():
+            room_retrieval_scores_result = self.room_retrieval_scores_result[score_type]
+            room_retrieval_scores = [room_retrieval_scores_result['correct']*1.0/room_retrieval_scores_result['total'],
+                                    room_retrieval_scores_result['correct'], room_retrieval_scores_result['total'],
+                                    common.ave_list(room_retrieval_scores_result['score']), 
+                                    common.ave_list(room_retrieval_scores_result['score_gt_scan']) ]
+            room_retrieval_scores_lines.append("{}: {:.3f} ({}/{}), score: {:.3f}, score_gt_scan: {:.3f}".format(score_type, *room_retrieval_scores))
+         ## write to file
+        with open(room_retrieval_scores_file, 'w') as f:
+            for line in room_retrieval_scores_lines:
+                f.write(line + '\n')
         breakpoint = 0
+        
+    def calculateHeteregenousObjectSim(self, sim_matrix, cate_sam_matrix, top_K = 5):
+        sim_matrix[cate_sam_matrix] = -1
+        # get top K similar objects with different categories
+        top_K_similarities, top_K_indices = torch.topk(sim_matrix, top_K, dim = -1)
+        
+        return top_K_similarities.mean()
+        
+    def calculateObjectSimilarity(self, data_dict, batch_i):
+
+        # get 3D SGAligner embeddings
+        obj_3D_embeddings_arr = data_dict['obj_3D_embeddings_list'][batch_i]
+        # get object category
+        obj_3D_idx2info = data_dict['obj_3D_idx2info_list'][batch_i]
+        obj_3D_cate_arr = torch.Tensor(
+            [int(obj_3D_idx2info[obj_idx][2]) 
+            for obj_idx in range(len(obj_3D_idx2info))]).to(self.device)
+        obj_3D_cate_same = obj_3D_cate_arr.reshape(-1, 1) == obj_3D_cate_arr.reshape(1, -1)
+        # get obj encoding
+        obj_features = self.model.obj_embedding_encoder(obj_3D_embeddings_arr)
+        
+        # calculate similarity matrix
+        obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings_arr, dim=-1)
+        obj_3D_embeddings_sim = torch.mm(obj_3D_embeddings_norm, obj_3D_embeddings_norm.permute(1, 0))
+        
+        # calculate obj features similarity
+        obj_features_norm = F.normalize(obj_features, dim=-1)
+        obj_features_sim = torch.mm(obj_features_norm, obj_features_norm.permute(1, 0))
+        
+        # calculate heterogenous obj similarity
+        heterogenous_obj_sgaligner_similarity = \
+            self.calculateHeteregenousObjectSim(obj_3D_embeddings_sim, obj_3D_cate_same)
+        heterogenous_obj_features_similarity =   \
+            self.calculateHeteregenousObjectSim(obj_features_sim, obj_3D_cate_same)
+                       
+        return heterogenous_obj_sgaligner_similarity.cpu(), heterogenous_obj_features_similarity.cpu()
         
 def parse_args(parser=None):
     parser = argparse.ArgumentParser()
@@ -389,7 +545,7 @@ def main():
     command = 'cp {} {}'.format(args.config, out_dir)
     subprocess.call(command, shell=True)
 
-    tester = RoomRetrivalPatchObjAligner(cfg)
+    tester = RoomRetrivalScore(cfg)
     tester.run()
     breakpoint = 0
 

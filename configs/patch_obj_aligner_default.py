@@ -1,3 +1,4 @@
+from flask.scaffold import F
 from yacs.config import CfgNode as CN
 import os.path as osp
 import os
@@ -22,6 +23,9 @@ _C.data.img_encoding.resize_w = 1024
 _C.data.img_encoding.img_rotate: True # rotate w,h for backbone GCVit
 _C.data.img_encoding.patch_w: 16 # number of patchs in width
 _C.data.img_encoding.patch_h: 9
+_C.data.img_encoding.record_feature = False
+_C.data.img_encoding.use_feature = False
+_C.data.img_encoding.feature_dir = ''
 
 _C.data.cross_scene = CN()
 _C.data.cross_scene.use_cross_scene = True
@@ -55,6 +59,15 @@ _C.train.optim.grad_acc_steps = 1
 _C.train.use_vis = False
 _C.train.vis_epoch_steps = 10000
 
+# for validation
+_C.val = CN()
+_C.val.batch_size = 1
+_C.val.num_workers = 1
+_C.val.pretrained = ''
+_C.val.room_retrieval = CN()
+_C.val.room_retrieval.enable = False
+_C.val.room_retrieval.epsilon_th = 0.9
+_C.val.room_retrieval.method_name = ''
 
 def update_config(cfg, filename, ensure_dir=True):
     cfg.defrost()
@@ -109,8 +122,8 @@ def update_config_room_retrival(cfg, filename, ensure_dir=True):
     cfg.other.resume = osp.join(RESUME_DIR, cfg.other.resume)
     
     if ensure_dir:
-        common.ensure_dir(osp.join(cfg.output_dir, cfg.val.method_name))
-        cfg.log_dir = osp.join(cfg.output_dir, cfg.val.method_name, 'logs')
+        common.ensure_dir(osp.join(cfg.output_dir, cfg.val.room_retrieval.method_name))
+        cfg.log_dir = osp.join(cfg.output_dir, cfg.val.room_retrieval.method_name, 'logs')
         common.ensure_dir(cfg.log_dir)
 
     cfg.freeze()

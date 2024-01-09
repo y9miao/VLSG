@@ -101,10 +101,57 @@ class PatchObjectAligner(nn.Module):
         features = self.backbone(images)[-1] # (B, C', H/32, W/32); input channel first,output channel first 
         features = _to_channel_last(features)
         channel_last = True
-        patch_features = self.reduce_layers(features) # (B, H/32, W/32, C'); input channel last,output channel last 
+        patch_features = self.reduce_layers(features) # (B, H/64, W/64, C'); input channel last,output channel last 
         patch_features = self.patch_encoder(patch_features) # (B, P_H, P_W, C*); input channel last,output channel last 
         patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
         
+        # obj encoding for each batch
+        batch_size = data_dict['batch_size']
+        obj_3D_features_list = []
+        patch_obj_sim_list = []
+        patch_patch_sim_list = []
+        obj_obj_sim_list = []
+        for batch_i in range(batch_size):
+            # get patch and obj features
+            obj_embeddings = data_dict['obj_3D_embeddings_list'][batch_i] 
+            # # (O, C*); input channel last,output channel last
+            obj_features = self.obj_embedding_encoder(obj_embeddings) 
+            obj_3D_features_list.append(obj_features)
+            
+            # calculate similarity between patches and objs
+            # patch features per batch
+            patch_features_pb = patch_features[batch_i] # (P_H*P_W, C*)
+            patch_features_pb_norm = F.normalize(patch_features_pb, dim=-1)
+            obj_features_pb = obj_features
+            obj_features_pb_norm = F.normalize(obj_features_pb, dim=-1)
+            # calculate patch-object similarity (P_H*P_W, O)
+            patch_obj_sim = torch.mm(patch_features_pb_norm, obj_features_pb_norm.permute(1, 0))
+            patch_obj_sim_list.append(patch_obj_sim)
+            # calculate patch-patch similarity (N_P, N_P); N_P = P_H*P_W
+            patch_patch_sim = torch.mm(patch_features_pb_norm, patch_features_pb_norm.permute(1, 0))
+            patch_patch_sim_list.append(patch_patch_sim)
+            # calculate obj-obj similarity (O, O)
+            obj_obj_sim = torch.mm(obj_features_pb_norm, obj_features_pb_norm.permute(1, 0))
+            obj_obj_sim_list.append(obj_obj_sim)
+        embs = {}
+        embs['patch_raw_features'] = features # (B, H/32, W/32, C');
+        embs['patch_features'] = patch_features # (B, P_H*P_W, C*)
+        embs['obj_features'] = obj_3D_features_list # B - [O, C*]
+        embs['patch_obj_sim'] = patch_obj_sim_list # B - [P_H*P_W, O]
+        embs['patch_patch_sim'] = patch_patch_sim_list # B - [P_H*P_W, P_H*P_W]
+        embs['obj_obj_sim'] = obj_obj_sim_list # B - [O, O]
+        
+        return embs
+    
+    def forward_with_patch_features(self, data_dict):
+        # get data
+        patch_features = data_dict['patch_features'] # (B, P_H*2, P_W*2, C*)
+        
+        # encoding patch features
+        patch_features = self.reduce_layers(patch_features) 
+        patch_features = self.patch_encoder(patch_features) # (B, P_H, P_W, C*)
+        patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
+
         # obj encoding for each batch
         batch_size = data_dict['batch_size']
         obj_3D_features_list = []
@@ -141,5 +188,7 @@ class PatchObjectAligner(nn.Module):
         embs['obj_obj_sim'] = obj_obj_sim_list # B - [O, O]
         
         return embs
+        
+        
 
     
