@@ -307,8 +307,11 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         ## From 3D to 2D, denote as f1i_matrix, f1j_matrix, f2j_matrix
         ## f1i_matrix = e1i_matrix.T, thus skip
         ## f2j_matrix = e2j_matrix.T, thus skip
-        ## f1j_matrix, 1 - I, thus skip
-        
+        ## f1j_matrix
+        obj_cates = [obj_3D_idx2info[obj_idx][2] for obj_idx in range(len(obj_3D_idx2info))]
+        obj_cates_arr = np.array(obj_cates)
+        f1j_matrix = obj_cates_arr.reshape(1, -1) != obj_cates_arr.reshape(-1, 1)
+            
         data_dict = {}
         # frame info
         data_dict['scan_id'] = scan_id
@@ -333,6 +336,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['e1i_matrix'] = e1i_matrix
         data_dict['e1j_matrix'] = e1j_matrix
         data_dict['e2j_matrix'] = e2j_matrix
+        data_dict['f1j_matrix'] = f1j_matrix
         data_dict['obj_2D_patch_anno_flatten'] = obj_2D_patch_anno_flatten
         return data_dict
     
@@ -376,6 +380,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['e1i_matrix_list'] = [ torch.from_numpy(data['e1i_matrix']) for data in batch]  # B - [N_P, N_O]
         data_dict['e1j_matrix_list'] = [ torch.from_numpy(data['e1j_matrix']) for data in batch]  # B - [N_P, N_P]
         data_dict['e2j_matrix_list'] = [ torch.from_numpy(data['e2j_matrix']) for data in batch]  # B - [N_P, N_O]
+        data_dict['f1j_matrix_list'] = [ torch.from_numpy(data['f1j_matrix']) for data in batch]  # B - [N_O, N_O]
         data_dict['obj_2D_patch_anno_flatten_list'] = \
             [ torch.from_numpy(data['obj_2D_patch_anno_flatten']) for data in batch] # B - [N_P]
         return data_dict
@@ -386,7 +391,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/room_retrieval_week5/scan3r_cross_scenes.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/room_retrieval_week5/train_debug_cross_scenes/scan3r_cross_scenes.yaml"
     cfg = update_config(config, cfg_file)
     scan3r_ds = PatchObjectPairCrossScenesDataSet(cfg, split='val')
     print(len(scan3r_ds))

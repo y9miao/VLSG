@@ -21,7 +21,7 @@ from mmdet.models import build_backbone
 from mmcv import Config
 # from models.GCVit.models import gc_vit
 from models.patch_obj_aligner import PatchObjectAligner
-from models.loss import ICLLoss
+from models.loss import get_loss, get_val_loss
 from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 # dataset
 from datasets.scan3r_obj_pair import PatchObjectPairDataSet
@@ -69,7 +69,8 @@ class Trainer(EpochBasedTrainer):
         self.freezeBackboneParams(cfg)
         
         # generate loss
-        self.loss = ICLLoss()
+        self.loss = get_loss(cfg)
+        self.val_loss = get_val_loss(cfg)
         
         # log step for training
         if self.cfg.train.log_steps:
@@ -186,13 +187,13 @@ class Trainer(EpochBasedTrainer):
 
     def val_step(self, epoch, iteration, data_dict):
         embeddings = self.model_forward(data_dict)
-        loss_dict = self.loss(embeddings, data_dict)
+        loss_dict = self.val_loss(embeddings, data_dict)
         return embeddings, loss_dict
 
     def set_eval_mode(self):
         self.training = False
         self.model.eval()
-        self.loss.eval()
+        self.val_loss.eval()
         torch.set_grad_enabled(False)
 
     def set_train_mode(self):

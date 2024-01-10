@@ -15,7 +15,7 @@ sys.path.append(ws_dir)
 
 # utils
 from utils import common
-from utils import visualisation
+# from utils import visualisation
 
 # config
 from configs import update_config_room_retrival, config
@@ -449,8 +449,8 @@ class RoomRetrivalScore(SingleTester):
             patches_result_cate_out_dict[key] = patches_result_cate_out_dict[key] * 100
         
         ## draw and save figure
-        visualisation.plotBar(metric_title=title, x_label=x_label, y_label=y_label, labels=labels, metric_values=[metric_values], 
-                              method_names=[self.method_name], fig_path = patches_result_fig_file, x_rotation=90)
+        # visualisation.plotBar(metric_title=title, x_label=x_label, y_label=y_label, labels=labels, metric_values=[metric_values], 
+        #                       method_names=[self.method_name], fig_path = patches_result_fig_file, x_rotation=90)
         
         
         # save room retrieval result

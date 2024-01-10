@@ -55,7 +55,15 @@ _C.train.optim.weight_decay = 0.0001
 _C.train.optim.max_epoch = 10000
 _C.train.optim.free_backbone_epoch = 10000
 _C.train.optim.grad_acc_steps = 1
+## loss
+_C.train.loss = CN()
+_C.train.loss.loss_type = 'ICLLoss'
+_C.train.loss.alpha = 0.5 # for contrastive loss
+_C.train.loss.temperature = 0.1
+_C.train.loss.margin = 0.2 # for triplet loss
+_C.train.loss.epsilon = 1e-8 
 
+## others
 _C.train.use_vis = False
 _C.train.vis_epoch_steps = 10000
 
