@@ -298,7 +298,7 @@ class TripletLoss(nn.Module):
             loss_this_batch = loss_this_batch[e1i_valid]
             loss_this_batch = loss_this_batch[e2j_matrix[e1i_valid].nonzero(as_tuple=True)] # cos_sim of negative - cos_sim of positive
             loss_this_batch = loss_this_batch + margin
-            loss_this_batch = loss_this_batch[loss_this_batch > 0]
+            loss_this_batch[loss_this_batch <= 0] = 0
 
             matched_obj_idxs = torch.argmax(patch_obj_sim, dim=1).reshape(-1,1) # (N_P)
             matched_obj_labels = e1i_matrix.gather(1, matched_obj_idxs) # (N_P, 1)
