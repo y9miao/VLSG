@@ -81,7 +81,8 @@ class ICLLoss(nn.Module):
                     
         
         loss_dict =  {
-            'loss': loss_batch.mean() if loss_batch is not None else 0.,
+            'loss': loss_batch.mean() if loss_batch is not None \
+                else torch.tensor([0.], requires_grad=True, device=patch_obj_sim.device),
             'matched_success_ratio': matched_success_batch.float().mean() \
                 if loss_batch is not None else 0.
         }
@@ -177,7 +178,8 @@ class ICLLossBothSides(nn.Module):
                     else torch.cat((matched_success_batch, matched_obj_labels), dim=0)
         
         loss_dict =  {
-            'loss': loss_batch.mean() if loss_batch is not None else 0.,
+            'loss': loss_batch.mean() if loss_batch is not None \
+                else torch.tensor([0.], requires_grad=True, device=patch_obj_sim.device),
             'matched_success_ratio': matched_success_batch.float().mean() \
                 if loss_batch is not None else 0.
         }
@@ -272,7 +274,8 @@ class ICLLossBothSidesSumOutLog(nn.Module):
                     else torch.cat((matched_success_batch, matched_obj_labels), dim=0)
         
         loss_dict =  {
-            'loss': loss_batch.mean() if loss_batch is not None else 0.,
+            'loss': loss_batch.mean() if loss_batch is not None \
+                else torch.tensor([0.], requires_grad=True, device=patch_obj_sim.device),
             'matched_success_ratio': matched_success_batch.float().mean() \
                 if loss_batch is not None else 0.
         }
@@ -294,17 +297,17 @@ class TripletLoss(nn.Module):
         loss, matched_obj_labels = None, None
         if e1i_valid.any():
             loss_this_batch = patch_obj_sim*e2j_matrix - \
-                patch_obj_sim*e1i_matrix.sum(dim=-1).reshape(-1,1) 
-            loss_this_batch = loss_this_batch[e1i_valid]
-            loss_this_batch = loss_this_batch[e2j_matrix[e1i_valid].nonzero(as_tuple=True)] # cos_sim of negative - cos_sim of positive
-            loss_this_batch = loss_this_batch + margin
-            loss_this_batch[loss_this_batch <= 0] = 0
+                (patch_obj_sim*e1i_matrix).sum(dim=-1).reshape(-1,1) 
+            loss_this_batch_valid = loss_this_batch[e1i_valid]
+            loss_this_batch_valid = loss_this_batch_valid[e2j_matrix[e1i_valid].nonzero(as_tuple=True)] # cos_sim of negative - cos_sim of positive
+            loss_this_batch = loss_this_batch_valid + margin
+            loss_this_batch_margin = loss_this_batch[loss_this_batch > 0]
 
             matched_obj_idxs = torch.argmax(patch_obj_sim, dim=1).reshape(-1,1) # (N_P)
             matched_obj_labels = e1i_matrix.gather(1, matched_obj_idxs) # (N_P, 1)
             matched_obj_labels = matched_obj_labels.squeeze(1) # (N_P)
             matched_obj_labels = matched_obj_labels[e1i_valid]
-        return loss_this_batch, matched_obj_labels
+        return loss_this_batch_margin, matched_obj_labels
     
     def forward(self, embs, data_dict):
         patch_obj_sim_list = embs['patch_obj_sim'] # B - [P_H*P_W, O]
@@ -349,7 +352,8 @@ class TripletLoss(nn.Module):
                     else torch.cat((matched_success_batch, matched_obj_labels), dim=0)
         
         loss_dict =  {
-            'loss': loss_batch.mean() if loss_batch is not None else 0.,
+            'loss': loss_batch.mean() if (loss_batch is not None and loss_batch.shape[0]>0) \
+                else torch.tensor([0.], requires_grad=True, device=patch_obj_sim.device),
             'matched_success_ratio': matched_success_batch.float().mean() \
                 if loss_batch is not None else 0.
         }
