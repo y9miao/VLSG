@@ -341,19 +341,19 @@ class RoomRetrivalScore(SingleTester):
             retrieval_info_score1 = {
                 'scan_id': scan_id,
                 'score': candidate_room_scores_1[selected_scan_id_score1],
-                'is_room_correct': scan_id == selected_scan_id_score1,
+                'is_room_correct': scan_id == selected_scan_id_score1 and candidate_room_scores_1[selected_scan_id_score1] > 0,
                 'correct_score': candidate_room_scores_1[scan_id],
             }
             retrieval_info_score2 = {
                 'scan_id': scan_id,
                 'score': candidate_room_scores_2[selected_scan_id_score2],
-                'is_room_correct': scan_id == selected_scan_id_score2,
+                'is_room_correct': scan_id == selected_scan_id_score2 and candidate_room_scores_2[selected_scan_id_score2] > 0,
                 'correct_score': candidate_room_scores_2[scan_id],
             }
             retrieval_info_score3 = {
                 'scan_id': scan_id,
                 'score': candidate_room_scores_3[selected_scan_id_score3],
-                'is_room_correct': scan_id == selected_scan_id_score3,
+                'is_room_correct': scan_id == selected_scan_id_score3 and candidate_room_scores_3[selected_scan_id_score3] > 0,
                 'correct_score': candidate_room_scores_3[scan_id],
             } 
             retrieval_info_scores = {
@@ -451,7 +451,6 @@ class RoomRetrivalScore(SingleTester):
         ## draw and save figure
         # visualisation.plotBar(metric_title=title, x_label=x_label, y_label=y_label, labels=labels, metric_values=[metric_values], 
         #                       method_names=[self.method_name], fig_path = patches_result_fig_file, x_rotation=90)
-        
         
         # save room retrieval result
         room_retrieval_scans_out_lines = []
