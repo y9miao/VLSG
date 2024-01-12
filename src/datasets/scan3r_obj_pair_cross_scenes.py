@@ -65,6 +65,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         
         # if split is val, then use all object from other scenes as negative samples
         # if room_retrieval, then use load additional data items
+        self.room_retrieval = False
         if split == 'val':
             self.num_negative_samples = -1
             self.room_retrieval = True
