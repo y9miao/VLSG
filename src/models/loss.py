@@ -459,7 +459,7 @@ class ValidationRoomRetrievalLoss(nn.Module):
     def __init__(self, cfg):
         super(ValidationRoomRetrievalLoss, self).__init__()
         self.loss = get_loss(cfg)
-        self.epsilon_th = cfg.train.loss.epsilon
+        self.epsilon_th = cfg.val.loss.room_retrieval.epsilon_th
     
     def forward(self, embs, data_dict):
         # calculate patch loss for each batch
