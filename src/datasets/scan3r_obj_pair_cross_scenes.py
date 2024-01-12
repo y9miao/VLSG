@@ -85,16 +85,16 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
                     self.refscans2scans[ref_scan_id].append(scan['reference'])
                     self.scans2refscans[scan['reference']] = ref_scan_id
                     
-        self.resplit = "resplit" if cfg.data.resplit else ""
+        self.resplit = "resplit_" if cfg.data.resplit else ""
 
         if self.rescan:
-            ref_scans = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}_scans.txt'.format(split, self.resplit)), dtype=str)
+            ref_scans = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
             self.scan_ids = []
             for ref_scan in ref_scans:
                 self.scan_ids += self.refscans2scans[ref_scan]
             
         else:
-            self.scan_ids = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}_scans.txt'.format(split, self.resplit)), dtype=str)
+            self.scan_ids = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
             
         # load 2D image paths
         self.image_paths = {}
