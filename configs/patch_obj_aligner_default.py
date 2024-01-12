@@ -12,6 +12,8 @@ _C.data = CN()
 _C.data.name = "Scan3R"
 _C.data.root_dir = ""
 _C.data.rescan = False
+_C.data.temporal = False
+_C.data.resplit = True
 
 _C.data.img = CN()
 _C.data.img.img_step = 5
@@ -29,7 +31,7 @@ _C.data.img_encoding.feature_dir = ''
 
 _C.data.cross_scene = CN()
 _C.data.cross_scene.use_cross_scene = True
-_C.data.cross_scene.num_scenes = 10
+_C.data.cross_scene.num_scenes = 9
 _C.data.cross_scene.num_negative_samples = -1 # -1 means 
 
 # for training
@@ -60,7 +62,7 @@ _C.train.loss = CN()
 _C.train.loss.loss_type = 'ICLLoss'
 _C.train.loss.alpha = 0.5 # for contrastive loss
 _C.train.loss.temperature = 0.1
-_C.train.loss.margin = 0.2 # for triplet loss
+_C.train.loss.margin = 0.1 # for triplet loss
 _C.train.loss.epsilon = 1e-8 
 
 ## others
@@ -73,8 +75,7 @@ _C.val.batch_size = 1
 _C.val.num_workers = 1
 _C.val.pretrained = ''
 _C.val.room_retrieval = CN()
-_C.val.room_retrieval.enable = False
-_C.val.room_retrieval.epsilon_th = 0.9
+_C.val.room_retrieval.epsilon_th = 0.8
 _C.val.room_retrieval.method_name = ''
 
 def update_config(cfg, filename, ensure_dir=True):

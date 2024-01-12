@@ -1,3 +1,4 @@
+import re
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -18,6 +19,9 @@ def get_loss(cfg):
 def get_val_loss(cfg):
     return ValidationLoss(cfg.train.loss.margin, cfg.train.loss.temperature, 
                           cfg.train.loss.alpha, cfg.train.loss.epsilon, cfg.train.loss.loss_type)
+    
+def get_val_room_retr_loss(cfg):
+    return ValidationRoomRetrievalLoss(cfg)
 
 class ICLLoss(nn.Module):
     def __init__(self, temperature=0.1, alpha = 0.5, epsilon=1e-8):
@@ -449,5 +453,79 @@ class ValidationLoss(nn.Module):
             'ICLLossBothSidesSumOutLog': loss_batch_both_sides2.mean() if loss_batch_both_sides2 is not None else 0.,
             'TripletLoss': loss_batch_triplet.mean() if loss_batch_triplet is not None else 0.,
         }
-        
         return loss_dict
+    
+class ValidationRoomRetrievalLoss(nn.Module):
+    def __init__(self, cfg):
+        super(ValidationRoomRetrievalLoss, self).__init__()
+        self.loss = get_loss(cfg)
+        self.epsilon_th = cfg.train.loss.epsilon
+    
+    def forward(self, embs, data_dict):
+        # calculate patch loss for each batch
+        loss_dict = self.loss(embs, data_dict)
+        # room retrieval
+        room_retreatl_dict = self.roomRetrieval(embs, data_dict)
+    
+        valid_loss_dict =  {
+            'loss': loss_dict['loss'],
+            'matched_success_ratio': loss_dict['matched_success_ratio'],
+            'room_retr_R@1': room_retreatl_dict['R@1'],
+            'room_retr_R@3': room_retreatl_dict['R@3'],
+            'room_retr_R@5': room_retreatl_dict['R@5'],
+        }
+        return valid_loss_dict
+    
+    def roomRetrieval(self, embs, data_dict):
+        
+        retrieval_result = {
+            'total': 0,
+            'R@1': 0,
+            'R@3': 0,
+            'R@5': 0,
+        }
+                
+        batch_size = data_dict['batch_size']
+        for batch_i in range(batch_size):
+            # dataitem info
+            scan_id = data_dict['scan_ids'][batch_i]
+
+            # patch_obj_sim
+            patch_obj_sim_list = embs['patch_obj_sim']
+            patch_obj_sim = patch_obj_sim_list[batch_i]
+            
+            # get room retrieval result by score
+            candata_scan_obj_idxs = data_dict['candate_scan_obj_idxs_list'][batch_i]
+            candidate_room_scores_1 = {} # score = sum( II(max_j(p_i, o_j) > epsilon) )
+            candidate_room_scores_2 = {} # score = sum( Score(p_i, o_j)[II(max_j(p_i, o_j) > epsilon)] )
+            candidate_room_scores_3 = {} # score = sum( max_j(p_i, o_j)  )
+            for candidate_scan_id in candata_scan_obj_idxs.keys():
+                candidate_obj_idxs = candata_scan_obj_idxs[candidate_scan_id]
+                patch_candidate_obj_sim = patch_obj_sim[:, candidate_obj_idxs]
+                matched_candidate_obj_idxs = torch.argmax(patch_candidate_obj_sim, dim=1).reshape(-1,1) # (N_P)
+                matched_candidate_obj_sim = patch_candidate_obj_sim.gather(1, matched_candidate_obj_idxs)
+                
+                # get scores
+                matched_candidate_obj_valid = matched_candidate_obj_sim > self.epsilon_th
+                candidate_room_scores_1[candidate_scan_id] = torch.sum(matched_candidate_obj_valid)
+                candidate_room_scores_2[candidate_scan_id] = torch.sum(matched_candidate_obj_sim[matched_candidate_obj_valid])
+                candidate_room_scores_3[candidate_scan_id] = torch.sum(matched_candidate_obj_sim)
+                
+            # get scan id sorted by given scores
+            score_to_used = candidate_room_scores_1
+            sorted_scan_id_score = [k for k, v in sorted(score_to_used.items(), key=lambda item: item[1], reverse=True)]
+                
+            retrieval_result['total'] += 1
+            if scan_id in sorted_scan_id_score[:1] and candidate_room_scores_1[scan_id] > 0:
+                retrieval_result['R@1'] += 1
+            if scan_id in sorted_scan_id_score[:3] and candidate_room_scores_1[scan_id] > 0:
+                retrieval_result['R@3'] += 1
+            if scan_id in sorted_scan_id_score[:5] and candidate_room_scores_1[scan_id] > 0:
+                retrieval_result['R@5'] += 1
+    
+        retrieval_result['R@1']  =  retrieval_result['R@1'] * 1.0 / retrieval_result['total']
+        retrieval_result['R@3']  =  retrieval_result['R@3'] * 1.0 / retrieval_result['total']
+        retrieval_result['R@5']  =  retrieval_result['R@5'] * 1.0 / retrieval_result['total']
+    
+        return retrieval_result
+            

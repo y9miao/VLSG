@@ -13,7 +13,7 @@ sys.path.append('..')
 sys.path.append('../..')
 from utils import common, scan3r
 
-class PatchObjectPairCrossScenesDataSet(data.Dataset):
+class PatchObjectPairXTemporalDataSet(data.Dataset):
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -65,36 +65,37 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         
         # if split is val, then use all object from other scenes as negative samples
         # if room_retrieval, then use load additional data items
-        if split == 'val':
+        self.room_retrieval = False
+        if split == 'val' or split == 'test':
             self.num_negative_samples = -1
             self.room_retrieval = True
             self.room_retrieval_epsilon_th = cfg.val.room_retrieval.epsilon_th
         
         # scans info
+        self.temporal = cfg.data.temporal
         self.rescan = cfg.data.rescan
         scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
         all_scan_data = common.load_json(scan_info_file)
         self.refscans2scans = {}
         self.scans2refscans = {}
+        self.all_scans_split = []
         for scan_data in all_scan_data:
             ref_scan_id = scan_data['reference']
             self.refscans2scans[ref_scan_id] = [ref_scan_id]
             self.scans2refscans[ref_scan_id] = ref_scan_id
-            if self.rescan:
-                for scan in scan_data['scans']:
-                    self.refscans2scans[ref_scan_id].append(scan['reference'])
-                    self.scans2refscans[scan['reference']] = ref_scan_id
-                    
+            for scan in scan_data['scans']:
+                self.refscans2scans[ref_scan_id].append(scan['reference'])
+                self.scans2refscans[scan['reference']] = ref_scan_id
         self.resplit = "resplit" if cfg.data.resplit else ""
-
+        ref_scans_split = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}_scans.txt'.format(split, self.resplit)), dtype=str)
+        self.all_scans_split = []
+        ## get all scans within the split(ref_scan + rescan)
+        for ref_scan in ref_scans_split:
+            self.all_scans_split += self.refscans2scans[ref_scan]
         if self.rescan:
-            ref_scans = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}_scans.txt'.format(split, self.resplit)), dtype=str)
-            self.scan_ids = []
-            for ref_scan in ref_scans:
-                self.scan_ids += self.refscans2scans[ref_scan]
-            
+            self.scan_ids = self.all_scans_split
         else:
-            self.scan_ids = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}_scans.txt'.format(split, self.resplit)), dtype=str)
+            self.scan_ids = ref_scans_split
             
         # load 2D image paths
         self.image_paths = {}
@@ -117,7 +118,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
             
         # load 3D obj embeddings
         self.obj_3D_embeddings = {}
-        for scan_id in self.scan_ids:
+        for scan_id in self.all_scans_split:
             embedding_file = osp.join(self.scans_3Dobj_embeddings_dir, "{}.pkl".format(scan_id))
             embeddings = common.load_pkl_data(embedding_file)
             obj_3D_embeddings_scan = embeddings['obj_embeddings']
@@ -132,7 +133,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
             scan_id = scan_item['scan']
             objs_info = scan_item['objects']
             scans_objs_info[scan_id] = objs_info
-        for scan_id in self.scan_ids:
+        for scan_id in self.all_scans_split:
             self.obj_3D_anno[scan_id] = {}
             for obj_item in scans_objs_info[scan_id]:
                 obj_id = int(obj_item['id'])
@@ -154,9 +155,9 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         candidate_scans = []
         scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
         # sample other scenes
-        for scan_id in self.scan_ids:
-            if scan_id not in scans_same_scene:
-                candidate_scans.append(scan_id)
+        for scan in self.all_scans_split:
+            if scan not in scans_same_scene:
+                candidate_scans.append(scan)
         sampled_scans = random.sample(candidate_scans, num_scenes)
         
         # sample objects of sampled scenes
@@ -176,6 +177,19 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         else:
             sampled_objs = candidate_objs
         return sampled_objs
+    
+    # sample cross time for each data item
+    def sampleCrossTime(self, scan_id):
+        candidate_scans = []
+        ref_scan = self.scans2refscans[scan_id]
+        for scan in self.refscans2scans[ref_scan]:
+            if scan != scan_id:
+                candidate_scans.append(scan)
+        if len(candidate_scans) == 0:
+            return None
+        else:
+            sampled_scan = random.sample(candidate_scans, 1)[0]
+            return sampled_scan
             
     def generateDataItems(self):
         data_items = []
@@ -203,36 +217,42 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
                     data_item_dict['obj_across_scenes'] = sampled_objs
                 else:
                     data_item_dict['obj_across_scenes'] = []
-                
+
+                # temporal data item, across scan time 
+                if self.temporal:
+                    data_item_dict['scan_id_across_time'] = self.sampleCrossTime(scan_id)
+                    
         # if debug with single scan
         if self.cfg.mode == "debug_few_scan":
             return data_items[:1]
-        
         return data_items
     
-    def __getitem__(self, idx):
-        data_item = self.data_items[idx]
-
+    def dataItem2DataDict(self, data_item, temporal=False):
+        if temporal and data_item['scan_id_across_time'] is None:
+            return None
+        
         # 3D object embeddings
-        scan_id = data_item['scan_id']
+        img_scan_id = data_item['scan_id']
+        scan_id = data_item['scan_id'] if not temporal else data_item['scan_id_across_time']
         obj_3D_embeddings = self.obj_3D_embeddings[scan_id]
-        obj_3D_embeddings_arr = np.array([obj_3D_embeddings[obj_id] for obj_id in obj_3D_embeddings])
         num_objs = len(obj_3D_embeddings)
         num_objs_across_scenes = len(data_item['obj_across_scenes'])
         obj_3D_id2idx = {} # only for objs in current scene
         obj_3D_idx2info = {} # for objs in current scene and other scenes
         candata_scan_obj_idxs = {}
         idx = 0
+        obj_3D_embeddings_list = []
+        ## objects within current scene
         for obj_id in  obj_3D_embeddings:
             obj_3D_id2idx[obj_id] = idx
             obj_3D_idx2info[idx] = self.obj_3D_anno[scan_id][obj_id]
-            
+            obj_3D_embeddings_list.append(obj_3D_embeddings[obj_id])
             if scan_id not in candata_scan_obj_idxs:
                 candata_scan_obj_idxs[scan_id] = []
             candata_scan_obj_idxs[scan_id].append(idx)
-            
-            idx += 1
-            
+            idx += 1 
+        obj_3D_embeddings_arr = np.array(obj_3D_embeddings_list)
+        ## objects across scenes
         obj_3D_across_scnes_embeddings = []
         for obj_info in data_item['obj_across_scenes']:
             obj_3D_idx2info[idx] = obj_info
@@ -240,18 +260,15 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
             obj_id_across_scenes = obj_info[1]
             obj_3D_across_scnes_embeddings.append(
                 self.obj_3D_embeddings[scan_id_across_scenes][obj_id_across_scenes])
-            
             if scan_id_across_scenes not in candata_scan_obj_idxs:
                 candata_scan_obj_idxs[scan_id_across_scenes] = []
             candata_scan_obj_idxs[scan_id_across_scenes].append(idx)
-            
             idx += 1
             
         obj_3D_across_scnes_embeddings_arr = np.array(obj_3D_across_scnes_embeddings)
         if num_objs_across_scenes > 0:
             obj_3D_embeddings_arr = np.concatenate(
                 [obj_3D_embeddings_arr, obj_3D_across_scnes_embeddings_arr], axis=0)
-        
         # 2D path features
         frame_idx = data_item['frame_idx']
         if self.cfg.data.img_encoding.use_feature:
@@ -290,7 +307,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
             patch_h_shift = patch_h_i*patch_w
             for patch_w_j in range(patch_w):
                 obj_id = obj_2D_patch_anno[patch_h_i, patch_w_j]
-                if obj_id != self.undefined and (obj_id in obj_3D_embeddings):
+                if obj_id != self.undefined and (obj_id in obj_3D_id2idx):
                     obj_idx = obj_3D_id2idx[obj_id]
                     e1i_matrix[patch_h_shift+patch_w_j, obj_idx] = 1 # mark 2D-3D patch-object pairs
                     e2j_matrix[patch_h_shift+patch_w_j, obj_idx] = 0 # mark 2D-3D patch-object unpairs
@@ -301,7 +318,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
             patch_h_shift = patch_h_i*patch_w
             for patch_w_j in range(patch_w):
                 obj_id = obj_2D_patch_anno[patch_h_i, patch_w_j]
-                if obj_id != self.undefined and obj_id in obj_3D_embeddings:
+                if obj_id != self.undefined and obj_id in obj_3D_id2idx:
                     e1j_matrix[patch_h_shift+patch_w_j, :] = np.logical_and(
                         obj_2D_patch_anno_flatten != self.undefined, obj_2D_patch_anno_flatten != obj_id
                     )
@@ -319,13 +336,14 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict = {}
         # frame info
         data_dict['scan_id'] = scan_id
+        data_dict['img_scan_id'] = data_item['scan_id']
         data_dict['frame_idx'] = frame_idx
         if self.cfg.data.img_encoding.use_feature:
             data_dict['patch_features'] = patch_features
         else:
             data_dict['image'] = img
             if self.cfg.data.img_encoding.record_feature:
-                data_dict['patch_features_path'] = self.patch_features_paths[scan_id][frame_idx]
+                data_dict['patch_features_path'] = self.patch_features_paths[img_scan_id][frame_idx]
         # pano annotations
         # data_dict['patch_anno'] = obj_2D_patch_anno
         # obj info
@@ -344,13 +362,18 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['obj_2D_patch_anno_flatten'] = obj_2D_patch_anno_flatten
         return data_dict
     
-    def collate_fn(self, batch):
-        batch_size = len(batch)
+    def collateBatchDicts(self, batch_dicts, temporal=False):
+        if temporal:
+            batch = [batch_dict['data_dict_across_time'] for batch_dict in batch_dicts if batch_dict is not None]
+        else:
+            batch = [batch_dict for batch_dict in batch_dicts if batch_dict is not None]
         
+        batch_size = len(batch)
         data_dict = {}
         data_dict['batch_size'] = batch_size
         # frame info 
         data_dict['scan_ids'] = np.stack([data['scan_id'] for data in batch])
+        data_dict['img_scan_ids'] = np.stack([data['img_scan_id'] for data in batch])
         data_dict['frame_idxs'] = np.stack([data['frame_idx'] for data in batch])
         if self.cfg.data.img_encoding.use_feature:
             patch_features_batch = np.stack([data['patch_features'] for data in batch]) # (B, P_H, P_W, D)
@@ -378,8 +401,6 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
                    candate_scan_obj_idxs[scan_id] = \
                         torch.Tensor(data['candata_scan_obj_idxs'][scan_id]).long()
                 data_dict['candate_scan_obj_idxs_list'].append(candate_scan_obj_idxs)
-                                                       
-
         # pairs info
         data_dict['e1i_matrix_list'] = [ torch.from_numpy(data['e1i_matrix']) for data in batch]  # B - [N_P, N_O]
         data_dict['e1j_matrix_list'] = [ torch.from_numpy(data['e1j_matrix']) for data in batch]  # B - [N_P, N_P]
@@ -387,6 +408,26 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
         data_dict['f1j_matrix_list'] = [ torch.from_numpy(data['f1j_matrix']) for data in batch]  # B - [N_O, N_O]
         data_dict['obj_2D_patch_anno_flatten_list'] = \
             [ torch.from_numpy(data['obj_2D_patch_anno_flatten']) for data in batch] # B - [N_P]
+        
+        if len(batch) > 0:
+            return data_dict
+        else:
+            return None
+    
+    def __getitem__(self, idx):
+        data_item = self.data_items[idx]
+        data_dict = self.dataItem2DataDict(data_item)
+        if self.temporal:
+            data_dict_across_time = self.dataItem2DataDict(data_item, temporal=True)
+            data_dict['data_dict_across_time'] = data_dict_across_time
+        return data_dict
+    
+    def collate_fn(self, batch):
+        data_dict = {}
+        data_dict['non_temporal'] = self.collateBatchDicts(batch)
+        if self.temporal:
+            data_dict_across_time = self.collateBatchDicts(batch, temporal=True)
+            data_dict['temporal'] = data_dict_across_time
         return data_dict
         
     def __len__(self):
@@ -395,10 +436,10 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/room_retrieval_week5/train_debug_cross_scenes/scan3r_cross_scenes.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/test/cfg_debug/debug_X_Temporal.yaml"
     cfg = update_config(config, cfg_file)
-    scan3r_ds = PatchObjectPairCrossScenesDataSet(cfg, split='val')
+    scan3r_ds = PatchObjectPairXTemporalDataSet(cfg, split='val')
     print(len(scan3r_ds))
-    batch = [scan3r_ds[0], scan3r_ds[1]]
+    batch = [scan3r_ds[0], scan3r_ds[0]]
     data_batch = scan3r_ds.collate_fn(batch)
     breakpoint=None
