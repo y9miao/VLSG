@@ -13,7 +13,7 @@ _C.data.name = "Scan3R"
 _C.data.root_dir = ""
 _C.data.rescan = False
 _C.data.temporal = False
-_C.data.resplit = True
+_C.data.resplit = False
 
 _C.data.img = CN()
 _C.data.img.img_step = 5
