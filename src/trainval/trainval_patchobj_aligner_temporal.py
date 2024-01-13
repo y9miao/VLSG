@@ -186,7 +186,8 @@ class Trainer(EpochBasedTrainer):
             # aggregate loss items
             for loss_item in loss_key:
                 if loss_item == 'loss':
-                    losses.append(loss_key[loss_item])
+                    if self.cfg.train.loss.use_temporal or key == 'non_temporal':
+                        losses.append(loss_key[loss_item])
                     continue
                 loss_item_renamed = loss_item + '_' + key
                 loss_dict[loss_item_renamed] = loss_key[loss_item]
@@ -211,7 +212,8 @@ class Trainer(EpochBasedTrainer):
             # aggregate loss items
             for loss_item in loss_key:
                 if loss_item == 'loss':
-                    losses.append(loss_key[loss_item])
+                    if self.cfg.train.loss.use_temporal or key == 'non_temporal':
+                        losses.append(loss_key[loss_item])
                     continue
                 loss_item_renamed = loss_item + '_' + key
                 loss_dict[loss_item_renamed] = loss_key[loss_item]

@@ -512,15 +512,15 @@ class ValidationRoomRetrievalLoss(nn.Module):
                 candidate_room_scores_3[candidate_scan_id] = torch.sum(matched_candidate_obj_sim)
                 
             # get scan id sorted by given scores
-            score_to_used = candidate_room_scores_1
+            score_to_used = candidate_room_scores_3
             sorted_scan_id_score = [k for k, v in sorted(score_to_used.items(), key=lambda item: item[1], reverse=True)]
                 
             retrieval_result['total'] += 1
-            if scan_id in sorted_scan_id_score[:1] and candidate_room_scores_1[scan_id] > 0:
+            if scan_id in sorted_scan_id_score[:1] and score_to_used[scan_id] > 0:
                 retrieval_result['R@1'] += 1
-            if scan_id in sorted_scan_id_score[:3] and candidate_room_scores_1[scan_id] > 0:
+            if scan_id in sorted_scan_id_score[:3] and score_to_used[scan_id] > 0:
                 retrieval_result['R@3'] += 1
-            if scan_id in sorted_scan_id_score[:5] and candidate_room_scores_1[scan_id] > 0:
+            if scan_id in sorted_scan_id_score[:5] and score_to_used[scan_id] > 0:
                 retrieval_result['R@5'] += 1
     
         retrieval_result['R@1']  =  retrieval_result['R@1'] * 1.0 / retrieval_result['total']

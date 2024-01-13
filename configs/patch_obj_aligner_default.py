@@ -59,6 +59,7 @@ _C.train.optim.free_backbone_epoch = 10000
 _C.train.optim.grad_acc_steps = 1
 ## loss
 _C.train.loss = CN()
+_C.train.loss.use_temporal = False
 _C.train.loss.loss_type = 'ICLLoss'
 _C.train.loss.alpha = 0.5 # for contrastive loss
 _C.train.loss.temperature = 0.1
