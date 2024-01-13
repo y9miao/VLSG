@@ -168,7 +168,7 @@ class PatchObjectPairCrossScenesDataSet(data.Dataset):
             candidate_objs += [self.obj_3D_anno[sampled_scan_id][obj_id] 
                                for obj_id in self.obj_3D_embeddings[sampled_scan_id]]
         sampled_objs = []
-        if num_objects > 0:
+        if num_objects >= 0:
             if num_objects < len(candidate_objs):
                 sampled_objs = random.sample(candidate_objs, num_objects)
             else:

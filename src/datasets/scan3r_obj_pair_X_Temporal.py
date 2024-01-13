@@ -86,8 +86,8 @@ class PatchObjectPairXTemporalDataSet(data.Dataset):
             for scan in scan_data['scans']:
                 self.refscans2scans[ref_scan_id].append(scan['reference'])
                 self.scans2refscans[scan['reference']] = ref_scan_id
-        self.resplit = "resplit" if cfg.data.resplit else ""
-        ref_scans_split = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}_scans.txt'.format(split, self.resplit)), dtype=str)
+        self.resplit = "resplit_" if cfg.data.resplit else ""
+        ref_scans_split = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
         self.all_scans_split = []
         ## get all scans within the split(ref_scan + rescan)
         for ref_scan in ref_scans_split:
@@ -168,7 +168,7 @@ class PatchObjectPairXTemporalDataSet(data.Dataset):
             candidate_objs += [self.obj_3D_anno[sampled_scan_id][obj_id] 
                                for obj_id in self.obj_3D_embeddings[sampled_scan_id]]
         sampled_objs = []
-        if num_objects > 0:
+        if num_objects >= 0:
             if num_objects < len(candidate_objs):
                 sampled_objs = random.sample(candidate_objs, num_objects)
             else:
