@@ -28,6 +28,7 @@ class EpochBasedTrainer(BaseTrainer):
         )
         self.max_epoch = cfg.train.optim.max_epoch
         self.best_val_loss = sys.float_info.max
+        self.run_grad_check = run_grad_check
     
     def before_train_step(self, epoch, iteration, data_dict) -> None:
         pass
@@ -93,6 +94,7 @@ class EpochBasedTrainer(BaseTrainer):
             result_dict['loss'].backward(retain_graph=True)
             self.after_backward(self.epoch, self.inner_iteration, data_dict, output_dict, result_dict)
             self.check_gradients(self.epoch, self.inner_iteration, data_dict, output_dict, result_dict)
+            self.optimizer_step(self.epoch)
 
             # after training
             self.timer.add_process_time()
@@ -119,7 +121,7 @@ class EpochBasedTrainer(BaseTrainer):
             
             torch.cuda.empty_cache()
             
-        self.optimizer_step(self.epoch)
+        
         
         self.after_train_epoch(self.epoch)
         message = get_log_string(self.summary_board.summary(), epoch=self.epoch, timer=self.timer)

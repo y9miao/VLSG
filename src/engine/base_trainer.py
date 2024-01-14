@@ -182,7 +182,9 @@ class BaseTrainer(abc.ABC):
         return self.saved_states[key]
 
     def check_invalid_gradients(self):
-        for param in self.model.parameters():
+        for idx, param in enumerate(self.model.parameters()):
+            if param.grad is None:
+                continue
             if torch.isnan(param.grad).any():
                 self.logger.error('NaN in gradients.')
                 return False

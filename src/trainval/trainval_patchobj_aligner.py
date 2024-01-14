@@ -31,8 +31,8 @@ from utils import common, scan3r
 
 
 class Trainer(EpochBasedTrainer):
-    def __init__(self, cfg, parser=None):
-        super().__init__(cfg, parser)
+    def __init__(self, cfg, parser=None, run_grad_check=False):
+        super().__init__(cfg, parser, run_grad_check=run_grad_check)
         
         # cfg
         self.cfg = cfg  
@@ -154,7 +154,7 @@ class Trainer(EpochBasedTrainer):
             #     self.optimizer.add_param_group( {'params' :  param } )
 
     def getDataLoader(self, cfg):
-        if cfg.data.cross_scene:
+        if cfg.data.cross_scene.use_cross_scene:
             dataset = PatchObjectPairCrossScenesDataSet
         else:
             dataset = PatchObjectPairDataSet
@@ -210,6 +210,7 @@ def parse_args(parser=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', dest='config', default='', type=str, help='configuration file name')
     parser.add_argument('--resume', action='store_true', help='resume training')
+    parser.add_argument('--run_grad_check', action='store_true', help='check grad')
     parser.add_argument('--snapshot', default=None, help='load from snapshot')
     parser.add_argument('--epoch', type=int, default=None, help='load epoch')
     parser.add_argument('--log_steps', type=int, default=500, help='logging steps')
@@ -230,7 +231,7 @@ def main():
     subprocess.call(command, shell=True)
     
     # train
-    trainer = Trainer(cfg, parser)
+    trainer = Trainer(cfg, parser, run_grad_check=args.run_grad_check)
     trainer.run()
 
 if __name__ == '__main__':

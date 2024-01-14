@@ -20,11 +20,8 @@ from mmdet.models import build_backbone
 from mmcv import Config
 # from models.GCVit.models import gc_vit
 from models.patch_obj_aligner import PatchObjectAligner
-from models.loss import ICLLossBothSides
+from models.loss import ICLLoss
 from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
-# dataset
-from datasets.scan3r_obj_pair import PatchObjectPairDataSet
-from datasets.scan3r_obj_pair_cross_scenes import PatchObjectPairCrossScenesDataSet
 
 
 
@@ -52,22 +49,11 @@ class Trainer(EpochBasedTrainer):
         # optimizer
         self.registerOptim(cfg)
         
-        # scheduler
-        if cfg.train.optim.scheduler == 'step':
-            scheduler = optim.lr_scheduler.StepLR(self.optimizer, cfg.train.optim.lr_decay_steps, gamma=cfg.train.optim.lr_decay)
-        elif cfg.train.optim.scheduler == 'cosine':
-            scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                self.optimizer, T_0=cfg.train.optim.T_max, eta_min=cfg.train.optim.lr_min,
-                T_mult=cfg.train.optim.T_mult, last_epoch=-1)
-        else:
-            raise NotImplementedError('Scheduler {} not implemented.'.format(cfg.train.optim.scheduler))
-        self.register_scheduler(scheduler)
-        
         # freeze backbone params if required
         self.freezeBackboneParams(cfg)
         
         # generate loss
-        self.loss = ICLLossBothSides(alpha=0.8)
+        self.loss = ICLLoss(return_sim=cfg.train.return_sim)
         
         # log step for training
         if self.cfg.train.log_steps:
@@ -151,11 +137,7 @@ class Trainer(EpochBasedTrainer):
             #     self.optimizer.add_param_group( {'params' :  param } )
 
     def getDataLoader(self, cfg):
-        if cfg.data.cross_scene:
-            dataset = PatchObjectPairCrossScenesDataSet
-        else:
-            dataset = PatchObjectPairDataSet
-        train_dataloader, val_dataloader = get_train_val_data_loader(cfg, dataset)
+        train_dataloader, val_dataloader = get_train_val_data_loader(cfg)
         return train_dataloader, val_dataloader
 
     def train_step(self, epoch, iteration, data_dict):
@@ -168,7 +150,7 @@ class Trainer(EpochBasedTrainer):
     def after_train_step(self, epoch, iteration, data_dict, output_dict, result_dict):
         # visualize result and save
         if self.cfg.train.use_vis:
-            self.result_visualizer.visualize(data_dict, output_dict, epoch)
+            self.result_visualizer.visualize(data_dict, output_dict['patch_obj_sim'], epoch)
 
     def val_step(self, epoch, iteration, data_dict):
         embeddings = self.model(data_dict)

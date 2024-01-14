@@ -30,9 +30,9 @@ _C.data.img_encoding.use_feature = False
 _C.data.img_encoding.feature_dir = ''
 
 _C.data.cross_scene = CN()
-_C.data.cross_scene.use_cross_scene = True
-_C.data.cross_scene.num_scenes = 9
-_C.data.cross_scene.num_negative_samples = -1 # -1 means 
+_C.data.cross_scene.use_cross_scene = False
+_C.data.cross_scene.num_scenes = 0
+_C.data.cross_scene.num_negative_samples = 0 # -1 means 
 
 # for training
 _C.train = CN()
