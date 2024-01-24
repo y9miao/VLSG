@@ -29,6 +29,17 @@ def get_train_val_data_loader(cfg, Dataset = PatchObjectPairDataSet):
 
     return train_dataloader, val_dataloader
 
+def get_train_dataloader(cfg, Dataset = PatchObjectPairDataSet):
+    train_dataset = Dataset(cfg, split='train')
+    train_dataloader = torch_util.build_dataloader(train_dataset, 
+                                                   batch_size=cfg.train.batch_size, 
+                                                   num_workers=cfg.train.num_workers, 
+                                                   shuffle=True,
+                                                   collate_fn=train_dataset.collate_fn, 
+                                                   pin_memory=True, 
+                                                   drop_last=True)
+    return train_dataset, train_dataloader
+
 def get_val_dataloader(cfg, Dataset = PatchObjectPairDataSet):
     val_dataset = Dataset(cfg, split='val')
     val_dataloader = torch_util.build_dataloader(val_dataset, 

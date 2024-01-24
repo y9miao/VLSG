@@ -186,9 +186,33 @@ class PatchObjectAligner(nn.Module):
         embs['patch_obj_sim'] = patch_obj_sim_list # B - [P_H*P_W, O]
         embs['patch_patch_sim'] = patch_patch_sim_list # B - [P_H*P_W, P_H*P_W]
         embs['obj_obj_sim'] = obj_obj_sim_list # B - [O, O]
-        
         return embs
-        
-        
-
     
+    def forward2DImage(self, data_dict):
+        # get data
+        images = data_dict['images']
+        
+        # patch encoding 
+        images = _to_channel_first(images)
+        channel_last = False
+        features = self.backbone(images)[-1] # (B, C', H/32, W/32); input channel first,output channel first 
+        features = _to_channel_last(features)
+        channel_last = True
+        patch_features = self.reduce_layers(features) # (B, H/64, W/64, C'); input channel last,output channel last 
+        patch_features = self.patch_encoder(patch_features) # (B, P_H, P_W, C*); input channel last,output channel last 
+        patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
+        
+        return patch_features
+    
+    def forward3DObject(self, data_dict):
+        # get data
+        batch_size = data_dict['batch_size']
+        obj_3D_features_list = []
+        
+        for batch_i in range(batch_size):
+            # get patch and obj features
+            obj_embeddings = data_dict['obj_3D_embeddings_list'][batch_i] 
+            # # (O, C*); input channel last,output channel last
+            obj_features = self.obj_embedding_encoder(obj_embeddings) 
+            obj_3D_features_list.append(obj_features)
+        return obj_3D_features_list

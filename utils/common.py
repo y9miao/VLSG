@@ -45,6 +45,11 @@ def get_print_format(value):
         return '.6f'
     return '.6f'
 
+def write_to_txt(file, lines):
+    with open(file, 'w') as f:
+        for line in lines:
+            f.write(line + '\n')
+
 
 def get_format_strings(kv_pairs):
     r"""Get format string for a list of key-value pairs."""

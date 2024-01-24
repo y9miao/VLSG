@@ -95,6 +95,16 @@ def load_frame_paths(data_dir, scan_id, skip=None):
         img_paths[frame_idx] = img_path
     return img_paths
 
+def load_depth_paths(data_dir, scan_id, skip=None):
+    frame_idxs = load_frame_idxs(osp.join(data_dir, "scenes"), scan_id, skip)
+    img_folder = osp.join(data_dir, "scenes", scan_id, 'sequence')
+    img_paths = {}
+    for frame_idx in frame_idxs:
+        img_name = "frame-{}.depth.pgm".format(frame_idx)
+        img_path = osp.join(img_folder, img_name)
+        img_paths[frame_idx] = img_path
+    return img_paths
+
 def load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip=None):
     features_path = {}
     frame_idxs = load_frame_idxs(osp.join(data_root_dir, "scenes"), scan_id, skip)
@@ -206,3 +216,88 @@ def create_ply_data(ply_data, visible_pts_idx):
     vertices['RIO27'] = rio27_id.astype('u1')
 
     return vertices, object_id
+
+def load_depth_map(depth_file, scale):
+    depth_map = cv2.imread(depth_file, cv2.IMREAD_UNCHANGED)
+    depth_map = depth_map.astype(np.float32) / scale
+    return depth_map
+
+def load_scan_depth_map(data_dir, scan_id, scale, step=None):
+    depth_paths = load_depth_paths(data_dir, scan_id, step)
+    depth_maps = {}
+    for frame_idx, depth_path in depth_paths.items():
+        depth_map = load_depth_map(depth_path, scale)
+        depth_maps[frame_idx] = depth_map
+    return depth_maps
+
+def depthmap2pc(depth_map, intrinsic, depth_range):
+
+    # get intrinsic parameters
+    fx = intrinsic[0,0]
+    fy = intrinsic[1,1]
+    cx = intrinsic[0,2]
+    cy = intrinsic[1,2]
+    
+    # get image size
+    height = depth_map.shape[0]
+    width = depth_map.shape[1]
+    
+    # get pixel coordinates
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    x = x.flatten()
+    y = y.flatten()
+    
+    # get depth values
+    depth = depth_map.flatten()
+    
+    # get 3D coordinates
+    x3 = (x - cx) * depth / fx
+    y3 = (y - cy) * depth / fy
+    z3 = depth
+    
+    # get valid points
+    valid = np.where((depth > depth_range[0]) & (depth < depth_range[1]))
+    x3 = x3[valid]
+    y3 = y3[valid]
+    z3 = z3[valid]
+    
+    # get point cloud
+    pc = np.stack([x3, y3, z3, np.ones_like(x3)]).transpose((1, 0))
+    
+    # shift from cam coords to KITTI style (x-forward, y-left, z-up)
+    pc_kitti = pc[:, (2, 0, 1, 3)]
+    pc_kitti[:, 1] = -pc_kitti[:, 1]
+    pc_kitti[:, 2] = -pc_kitti[:, 2]
+    
+    pc_valid = pc_kitti[ np.isfinite(pc_kitti).all(axis=1) ]
+    pc_valid = pc_valid[ np.isnan(pc_valid).any(axis=1) == False ]
+    return pc_valid
+
+def load_scan_depth_pcs(data_dir, scan_id, scale, intrinsic, depth_range, step=1):
+    depth_paths = load_depth_paths(data_dir, scan_id, step)
+    depth_pcs = {}
+    for frame_idx, depth_path in depth_paths.items():
+        depth_map = load_depth_map(depth_path, scale)
+        pcs = depthmap2pc(depth_map, intrinsic, depth_range)
+        pcs_valid = pcs[ np.isfinite(pcs).all(axis=1) ]
+        pcs_valid = pcs_valid[ np.isnan(pcs_valid).any(axis=1) == False ]
+        if pcs_valid.shape[0] < 1000:
+            print('No valid points in frame {}'.format(frame_idx))
+            continue
+        depth_pcs[frame_idx] = pcs_valid
+    return depth_pcs
+
+def load_scan_pcs(data_dir, scan_id, transform_rescan2ref, ref_coord = False):
+    ply_data_npy_file = osp.join(data_dir, scan_id, 'data.npy')
+    ply_data = np.load(ply_data_npy_file)
+    points = np.stack(
+        [ply_data['x'], ply_data['y'], ply_data['z'], np.ones_like(ply_data['x']) ]
+        ).transpose((1, 0))
+    # the loaded point cloud is in the coordinate of the reference scan
+    if not ref_coord and scan_id in transform_rescan2ref:
+        T_ref2rescan = np.linalg.inv(transform_rescan2ref[scan_id]).astype(np.float32)
+        # assert( abs(np.linalg.det(T_ref2rescan) - 1) < 1e-5)
+        # T_ref2rescan = np.eye(4, dtype=np.float32)
+        points = np.asarray(points@ T_ref2rescan).astype(np.float32)
+    
+    return points

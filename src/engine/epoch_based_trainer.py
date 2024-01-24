@@ -29,6 +29,7 @@ class EpochBasedTrainer(BaseTrainer):
         self.max_epoch = cfg.train.optim.max_epoch
         self.best_val_loss = sys.float_info.max
         self.run_grad_check = run_grad_check
+        self.mode = cfg.mode
     
     def before_train_step(self, epoch, iteration, data_dict) -> None:
         pass
@@ -193,7 +194,8 @@ class EpochBasedTrainer(BaseTrainer):
         self.set_train_mode()
         while self.epoch < self.max_epoch:
             self.epoch += 1
-            self.train_epoch()
+            if self.mode == 'train':
+                self.train_epoch()
             self.inference_epoch()
 
 

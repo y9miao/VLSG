@@ -1,0 +1,1 @@
+Feature generation time: 64.491s for 30462 images, 0.002s per image

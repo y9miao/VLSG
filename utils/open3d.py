@@ -34,6 +34,7 @@ def make_open3d_colors(points, base_color, scaling_axis=2, scaling_alpha=0):
     return colors
 
 def make_open3d_point_cloud(points, colors=None, normals=None):
+    points = points.reshape(-1, 3)
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
     if colors is not None:

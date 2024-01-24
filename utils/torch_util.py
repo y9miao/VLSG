@@ -23,6 +23,21 @@ def release_cuda(x):
             x = x.detach().cpu().numpy()
     return x
 
+def release_cuda_torch(x):
+    r"""Release all tensors to item or numpy array."""
+    if isinstance(x, list):
+        x = [release_cuda_torch(item) for item in x]
+    elif isinstance(x, tuple):
+        x = (release_cuda_torch(item) for item in x)
+    elif isinstance(x, dict):
+        x = {key: release_cuda_torch(value) for key, value in x.items()}
+    elif isinstance(x, torch.Tensor):
+        if x.numel() == 1:
+            x = x.item()
+        else:
+            x = x.detach().cpu()
+    return x
+
 def to_cuda(x):
     r"""Move all tensors to cuda."""
     if isinstance(x, list):

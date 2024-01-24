@@ -13,7 +13,6 @@ sys.path.append(ws_dir)
 from configs import update_config, config
 # trainer
 from engine import EpochBasedTrainer
-from datasets.loaders import get_train_val_data_loader
 # models
 import torch
 import torch.optim as optim
@@ -24,6 +23,7 @@ from models.patch_obj_aligner import PatchObjectAligner
 from models.loss import get_loss, get_val_loss, get_val_room_retr_loss
 from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 # dataset
+from datasets.loaders import get_train_val_data_loader
 from datasets.scan3r_obj_pair import PatchObjectPairDataSet
 from datasets.scan3r_obj_pair_cross_scenes import PatchObjectPairCrossScenesDataSet
 from datasets.scan3r_obj_pair_X_Temporal import PatchObjectPairXTemporalDataSet
