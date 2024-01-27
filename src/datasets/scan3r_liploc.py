@@ -8,6 +8,7 @@ import torch.utils.data as data
 import cv2
 import sys
 import tqdm
+import albumentations as A
 
 from yaml import scan
 dataset_dir = osp.dirname(osp.abspath(__file__))
@@ -16,7 +17,24 @@ sys.path.append(src_dir)
 from utils import common, scan3r, open3d, torch_util
 from datasets.loaders import get_val_dataloader
 
-class Scan3rLidarClipDataset(data.Dataset):
+def get_transforms(mode, size):
+    if mode == "train":
+        return A.Compose(
+            [   
+                A.Resize(size, size, always_apply=True),
+                A.Normalize(max_pixel_value=255.0, always_apply=True),
+                A.CoarseDropout(always_apply=False, p=0.9, max_holes=5, max_height=100, max_width=100, min_height=50, min_width=50, fill_value=(0, 0, 0), mask_fill_value=None),
+            ]
+        )
+    else:
+        return A.Compose(
+            [
+                A.Resize(size, size, always_apply=True),
+                A.Normalize(max_pixel_value=255.0, always_apply=True),
+            ]
+        )
+
+class Scan3rLipLocDataset(data.Dataset):
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -74,73 +92,85 @@ class Scan3rLidarClipDataset(data.Dataset):
         else:
             self.scan_ids = ref_scans_split
             
-        # load 2D image indexs and poses
+        # load 2D image indexs
         self.image_idxs = {}
-        self.img_poses = {}
         for scan_id in self.scan_ids:
             self.image_idxs[scan_id] = scan3r.load_frame_idxs(self.scans_scenes_dir, scan_id, self.step)
-            self.img_poses[scan_id] = scan3r.load_all_poses(self.scans_scenes_dir, )
             
-        # load 2D image features 
-        self.feature_2D_folder_name = cfg.data.img_encoding.feature_dir
-        self.img_features = {}
+        # load 2D image paths
+        self.image_paths = {}
         for scan_id in self.scan_ids:
-            img_features_scan_file = osp.join(self.scans_files_dir, self.feature_2D_folder_name, "{}.pkl".format(scan_id))
-            self.img_features[scan_id] = common.load_pkl_data(img_features_scan_file)
-            
-        # load 2D depth image paths
-        self.depth_image_paths = {}
-        for scan_id in self.scan_ids:
-            self.depth_image_paths[scan_id] = scan3r.load_depth_paths(self.scans_dir, scan_id, self.step)
-            
-        # load depth intrinsic matrix
-        self.intrinsics = {}
-        for scan_id in self.scan_ids:
-            self.intrinsics[scan_id] = scan3r.load_intrinsics(
-                self.scans_scenes_dir, scan_id, type='depth')['intrinsic_mat']
-        self.depth_scale = self.cfg.data.depth.scale
-        self.min_depth = self.cfg.data.depth.min_depth
-        self.max_depth = self.cfg.data.depth.max_depth
+            self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id, self.step)
+        
+        # img transform
+        self.transform = get_transforms(self.split, self.cfg.data.img.img_size)
         
         # load transform matrix from rescan to ref
         self.trans_rescan2ref = scan3r.read_transform_mat(scan_info_file) 
         
-        # load 3D pointclouds
-        if self.split != 'train':
-            self.loadScanPointClouds()
+        # load 3D range images pointclouds
+        self.loadScansRangeImage()
             
         # generate data items given multiple scans
         self.data_items = self.generateDataItems()
             
         break_point = None
             
-    def loadScanPointClouds(self):
-        # load scan pcs
-        self.scan_pcs = {}
-        for scan_id in self.scan_ids:
-            self.scan_pcs[scan_id] = scan3r.load_scan_pcs(
-                    self.scans_scenes_dir, scan_id, self.trans_rescan2ref)
-            
-            # transform to tensor
-            self.scan_pcs[scan_id] = torch.from_numpy(self.scan_pcs[scan_id]).float()
+    def loadScansRangeImage(self):
+        
+        use_saved_range = self.cfg.data.pointcloud.use_saved_range
+        save_range = self.cfg.data.pointcloud.save_range
+        range_name = self.cfg.data.pointcloud.range_name
+        self.range_folder = osp.join(self.scans_files_dir, range_name)
+        self.range_folder_depth = osp.join(self.range_folder, 'depth')
+        self.range_folder_color = osp.join(self.range_folder, 'color')
+        if save_range:
+            common.ensure_dir(self.range_folder_depth)
+            common.ensure_dir(self.range_folder_color)
+        
+        self.range_imgs = {}
+        self.range_folder = osp.join(self.scans_files_dir, range_name)
+        if use_saved_range:
+            # load range pcs
+            for scan_id in self.scan_ids:
+                range_depth_file = osp.join(self.range_folder_depth, scan_id+'.png')
+                self.range_imgs[scan_id] = cv2.imread(range_depth_file, cv2.IMREAD_UNCHANGED)
+        else:
+            fov_up = self.cfg.data.pointcloud.fov_up
+            fov_down = self.cfg.data.pointcloud.fov_down
+            range_min = self.cfg.data.pointcloud.range_min 
+            range_max = self.cfg.data.pointcloud.range_max
+            range_W = self.cfg.data.pointcloud.range_W
+            range_H = self.cfg.data.pointcloud.range_H
+            for scan_id in self.scan_ids:
+                proj_range, proj_color = self.loadScanRange(scan_id, fov_up, fov_down, range_min, range_max, range_W, range_H)
+                # record range image
+                self.range_imgs[scan_id] = proj_range
+                if save_range:
+                    # save range image
+                    range_depth_file = osp.join(self.range_folder_depth, scan_id+'.png')
+                    cv2.imwrite(range_depth_file, proj_range)
+                    # save color image
+                    range_color_file = osp.join(self.range_folder_color, scan_id+'.png')
+                    proj_color_bgr = cv2.cvtColor(proj_color, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(range_color_file, proj_color_bgr)
     
-        # load depth map pcs
-        self.depthmap_pcs = {}
-        for scan_id in self.scan_ids:
-            self.depthmap_pcs[scan_id] = scan3r.load_scan_depth_pcs(
-                    self.scans_dir, scan_id, self.depth_scale, 
-                    self.intrinsics[scan_id], [self.min_depth, self.max_depth], self.step)
-            # transform to tensor
-            self.depthmap_pcs[scan_id] = {
-                frame_idx: torch.from_numpy(self.depthmap_pcs[scan_id][frame_idx]).float()
-                for frame_idx in self.depthmap_pcs[scan_id]
-            }
-            
-    def load_depthmap_pcs(self):
-        return self.depthmap_pcs
-    def load_scan_pcs(self):
-        return self.scan_pcs
-    
+    def loadScanRange(self, scan_id, fov_up, fov_down, range_min, range_max, range_W, range_H):
+        if self.cfg.data.pointcloud.use_mesh:
+            mesh_file = osp.join(self.scans_scenes_dir, scan_id, "labels.instances.annotated.v2.ply")
+            proj_range, proj_color = scan3r.loadScanMeshRange(mesh_file, fov_up, fov_down, range_min, range_max, range_H, range_W)
+            return proj_range, proj_color
+        else:
+            # load scan pcs
+            pcs_with_color = scan3r.load_scan_pcs(
+                    self.scans_scenes_dir, scan_id, self.trans_rescan2ref, color=True)
+            pcs = pcs_with_color[:,:4]
+            colors = pcs_with_color[:,4:]
+            # project range image
+            pcs_center  = np.mean(pcs, axis=0)
+            proj_range, proj_color = scan3r.createRangeImage(
+                pcs, colors, pcs_center, fov_up, fov_down, range_W, range_H, [range_min, range_max])
+            return proj_range, proj_color
     
     def sampleCrossScenes(self, scan_id, num_scenes):
         candidate_scans = []
@@ -170,18 +200,12 @@ class Scan3rLidarClipDataset(data.Dataset):
         for scan_id in self.scan_ids:
             # obj_3D_embeddings_scan = self.obj_3D_embeddings[scan_id]
             # iterate over images
-            for frame_idx in self.image_idxs[scan_id]:
+            for frame_idx in self.image_paths[scan_id]:
                 data_item = {}
                 data_item['scan_id'] = scan_id
                 data_item['frame_idx'] = frame_idx
-                if self.split != 'train':
-                    if frame_idx in self.depthmap_pcs[scan_id]:
-                        data_item['pc'] = self.depthmap_pcs[scan_id][frame_idx]
-                        data_items.append(data_item)
-                else:
-                    data_item['depth_img_path'] = self.depth_image_paths[scan_id][frame_idx]
-                    data_item['intrinsic'] = self.intrinsics[scan_id]
-                    data_items.append(data_item)
+                data_item['img_path'] = self.image_paths[scan_id][frame_idx]
+                data_items.append(data_item)
                     
         random.shuffle(data_items)
         # if debug with single scan
@@ -190,76 +214,51 @@ class Scan3rLidarClipDataset(data.Dataset):
         return data_items
     
     def dataItem2DataDict(self, data_item):
-        data_dict = {}
-        
         # img info
-        img_scan_id = data_item['scan_id']
         scan_id = data_item['scan_id']
         frame_idx = data_item['frame_idx']
-        img_features = self.img_features[img_scan_id][frame_idx]
         
-        # 3D info
-        if self.split != 'train':
-            pcs = data_item['pc']
-            data_dict['pc'] = pcs
-        else:
-            # load depth image
-            depth_img_path = data_item['depth_img_path']
-            depth_map = scan3r.load_depth_map(depth_img_path, self.depth_scale)
-            ## trainsform depth image to point cloud with intrinsics
-            intrinsic = data_item['intrinsic']
-            point_cloud = scan3r.depthmap2pc(depth_map, intrinsic, [self.min_depth, self.max_depth])
-            point_cloud = torch.from_numpy(point_cloud).float()
-            data_dict['pc'] = point_cloud
+        img_path = data_item['img_path']
+        img = cv2.imread(img_path,cv2.IMREAD_UNCHANGED) # type: uint8
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = self.transform(image=img)['image']
+        img = np.transpose(img, (2, 0, 1)) # channel first
 
+        # 3D info
+        range_image = self.range_imgs[scan_id]
+        range_image = self.transform(image=range_image)['image']
+        range_image = np.transpose(range_image, (2, 0, 1)) # channel first
+
+        data_dict = {}
         data_dict['scan_id'] = scan_id
         data_dict['frame_idx'] = frame_idx
-        data_dict['img_feature'] = img_features
-        
+        data_dict['range_image'] = range_image
+        data_dict['img'] = img
         
         if self.split != 'train':
             # sample across scenes for room retrieval
             candidate_scans = self.sampleCrossScenes(scan_id, self.cfg.data.cross_scene.num_scenes)
             curr_scan = scan_id
             temporal_scan = self.sampleCrossTime(scan_id)
-            # # load depth map pcs for room retrieval
-            # candidate_depthmap_pcs = {}
-            # for candidate_scan in candidate_scans:
-            #     candidate_depthmap_pcs[candidate_scan] = self.depthmap_pcs[candidate_scan]
-            # curr_scan_depthmap_pcs = self.depthmap_pcs[curr_scan]
-            # temporal_scan_depthmap_pcs = self.depthmap_pcs[temporal_scan]
-            # # load scan pcs for room retrieval
-            # candidate_scan_pcs = {}
-            # for candidate_scan in candidate_scans:
-            #     candidate_scan_pcs[candidate_scan] = self.scan_pcs[candidate_scan]
-            # curr_scan_pcs = self.scan_pcs[curr_scan]
-            # temporal_scan_pcs = self.scan_pcs[temporal_scan]
-            
-            # # numpy to tensor
-            # data_dict['candidate_depthmap_pcs'] = candidate_depthmap_pcs
-            # data_dict['curr_scan_depthmap_pcs'] = curr_scan_depthmap_pcs
-            # data_dict['temporal_scan_depthmap_pcs'] = temporal_scan_depthmap_pcs
-            # data_dict['temporal_scan_id'] = temporal_scan
-            
-            # data_dict['candidate_scan_pcs'] = candidate_scan_pcs
-            # data_dict['curr_scan_pcs'] = curr_scan_pcs
-            # data_dict['temporal_scan_pcs'] = temporal_scan_pcs
             
             # save scan_id
             data_dict['candidate_scan_ids'] = candidate_scans
             data_dict['curr_scan_id'] = curr_scan
             data_dict['temporal_scan_id'] = temporal_scan
-                
         return data_dict
     
-    def collateBatchDicts(self, batch):
-        
-        # filter our data item with no pcs
-        batch_valid = []
-        for data in batch:
-            if data['pc'].shape[0] > 0:
-                batch_valid.append(data)
-        batch = batch_valid
+    def getRangeImagesTensor(self, scan_id_list):
+        scan_range_images = []
+        for scan_id in scan_id_list:
+            range_image = self.range_imgs[scan_id]
+            range_image = self.transform(image=range_image)['image']
+            range_image = np.transpose(range_image, (2, 0, 1))
+            scan_range_images.append(range_image)
+        range_image = np.stack(scan_range_images)
+        range_image_tensor = torch.from_numpy(range_image).float() # (B, 3, H, W)
+        return range_image_tensor
+    
+    def collateBatchDicts(self, batch):  
         
         batch_size = len(batch)
         data_dict = {}
@@ -267,11 +266,12 @@ class Scan3rLidarClipDataset(data.Dataset):
         # frame info 
         data_dict['scan_ids'] = [data['scan_id'] for data in batch]
         data_dict['frame_idxs'] = [data['frame_idx'] for data in batch]
-        img_features_batch = np.stack([data['img_feature'] for data in batch]) # (B, D)
-        data_dict['img_features'] = torch.from_numpy(img_features_batch).float() # (B, D)
-        assert img_features_batch.shape[0] == batch_size
-        # pcs
-        data_dict['pcs_batch'] = [data['pc'].contiguous() for data in batch]
+        
+        imgs_batch = np.stack([data['img'] for data in batch]) 
+        data_dict['camera_image'] = torch.from_numpy(imgs_batch).float() # (B, 3, H, W)
+        # 3d info
+        range_imgs_batch = np.stack([data['range_image'] for data in batch])
+        data_dict['lidar_image'] = torch.from_numpy(range_imgs_batch).float() # (B, 3, H, W)
         
         # e2j_matrix for unpaired data
         e2j_matrix = np.ones((batch_size, batch_size))
@@ -284,17 +284,6 @@ class Scan3rLidarClipDataset(data.Dataset):
         data_dict['e2j_matrix'] = torch.from_numpy(e2j_matrix).float()
         
         if self.split != 'train':
-            # data_dict['candidate_depthmap_pcs_list'] = [data['candidate_depthmap_pcs'] for data in batch]
-            # data_dict['curr_scan_depthmap_pcs_list'] = [data['curr_scan_depthmap_pcs'] for data in batch]
-            # data_dict['temporal_scan_depthmap_pcs_list'] = [data['temporal_scan_depthmap_pcs'] for data in batch]
-            # data_dict['temporal_scan_id_list'] = [data['temporal_scan_id'] for data in batch]
-            # # load numpy pcs to tensor
-            
-            
-            # data_dict['candidate_scan_pcs_list'] = [data['candidate_scan_pcs'] for data in batch]
-            # data_dict['curr_scan_pcs_list'] = [data['curr_scan_pcs'] for data in batch]
-            # data_dict['temporal_scan_pcs_list'] = [data['temporal_scan_pcs'] for data in batch]
-        
             data_dict['candidate_scan_ids_list'] = [data['candidate_scan_ids'] for data in batch]
             data_dict['curr_scan_id_list'] = [data['curr_scan_id'] for data in batch]
             data_dict['temporal_scan_id_list'] = [data['temporal_scan_id'] for data in batch]
@@ -318,37 +307,18 @@ class Scan3rLidarClipDataset(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week8/lidar_clip_trainval/scan3r_clip_train.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week9/trainval_liploc_360_mesh/scan3r_liploc_train.yaml"
     cfg = update_config(config, cfg_file, ensure_dir=False)
-    # scan3r_ds = Scan3rLidarClipDataset(cfg, split='val')
-    # print(len(scan3r_ds))
-    # batch = [scan3r_ds[0], scan3r_ds[1], scan3r_ds[2]]
-    # data_batch = scan3r_ds.collate_fn(batch)
     
-    # visualize
-    # vis = open3d.make_open3d_visualiser()
-    # data_item = scan3r_ds[10]
-    # # pcl = data_item['pc']
-    # # print("point cloud of frame {} in scan {}".format(data_item['frame_idx'], data_item['scan_id']))
-    # pcl = data_item['temporal_scan_pcs'][:,:3]
-    # print("point cloud scan {}".format(data_item['scan_id']))
+    # dataset
+    dataset = Scan3rLipLocDataset(cfg, 'train')
     
-    # candidate_scans = list(data_item['candidate_scan_pcs'].keys())
-    # candidate_scan = candidate_scans[0]
-    # candidate_pcl = data_item['candidate_scan_pcs'][candidate_scan]
-    # frame = '000005'
-    # candidate_depthmap_pc = data_item['candidate_depthmap_pcs'][candidate_scan][frame]
-    # print("point cloud of candidate scan {}, frame {} in scan {}".format(candidate_scan, frame, data_item['scan_id']))
-    # pcl = candidate_depthmap_pc
+    batch = dataset.collate_fn([dataset[0], dataset[1]])
     
-    # pcd = open3d.make_open3d_point_cloud(pcl)
-    # vis.add_geometry(pcd)
-    # vis.run()
-    
-    # data_loder
-    dataset_, val_dataloader = get_val_dataloader(cfg, Scan3rLidarClipDataset)
-    total_iterations = len(val_dataloader)
-    pbar = tqdm.tqdm(enumerate(val_dataloader), total=total_iterations)
-    for iteration, data_dict in pbar:
-        pass
+    # # data_loder
+    # dataset_, val_dataloader = get_val_dataloader(cfg, Scan3rLipLocDataset)
+    # total_iterations = len(val_dataloader)
+    # pbar = tqdm.tqdm(enumerate(val_dataloader), total=total_iterations)
+    # for iteration, data_dict in pbar:
+    #     pass
     breakpoint=None

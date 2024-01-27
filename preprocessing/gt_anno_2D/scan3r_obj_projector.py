@@ -144,7 +144,7 @@ class Scan3RIMGProjector():
 if __name__ == '__main__':
 
     data_root_dir = "/home/yang/big_ssd/Scan3R/3RScan"
-    scan3r_img_projector = Scan3RIMGProjector(data_root_dir, split='train', use_rescan=True)
-    step=5
+    scan3r_img_projector = Scan3RIMGProjector(data_root_dir, split='validation', use_rescan=True)
+    step=1
     for idx in tqdm(range(len(scan3r_img_projector.scan_ids))):
-        scan3r_img_projector.project(idx, step=5)
+        scan3r_img_projector.project(idx, step=step)

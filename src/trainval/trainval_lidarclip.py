@@ -62,6 +62,7 @@ class Trainer(EpochBasedTrainer):
         
         # loss type 
         self.loss_type = cfg.train.loss.loss_type
+        self.temperature = cfg.train.loss.temperature
         
         # scheduler
         if cfg.train.optim.scheduler == 'step':
@@ -174,8 +175,8 @@ class Trainer(EpochBasedTrainer):
         embeddings = {'embeddings_3D': embeddings_3D}
         
         e2j_matrix = data_dict['e2j_matrix']
-        sim_E1i_E1j = torch.diag(sim_cos, 0)
-        sim_E1i_E2j = (e2j_matrix * sim_cos).sum(dim=-1) # (N_P)
+        sim_E1i_E1j = torch.exp(torch.diag(sim_cos, 0) / self.temperature) 
+        sim_E1i_E2j = torch.exp( (e2j_matrix * sim_cos) / self.temperature ).sum(dim=-1)# (N_P)
         loss_N_pair = -torch.log(sim_E1i_E1j / (sim_E1i_E1j + sim_E1i_E2j + 1e-8)+ 1e-8) 
         loss_mse = -sim_mse
         
@@ -202,8 +203,8 @@ class Trainer(EpochBasedTrainer):
             embeddings = {'embeddings_3D': embeddings_3D}
             
             e2j_matrix = data_dict['e2j_matrix']
-            sim_E1i_E1j = torch.diag(sim_cos, 0)
-            sim_E1i_E2j = (e2j_matrix * sim_cos).sum(dim=-1) # (N_P)
+            sim_E1i_E1j = torch.exp(torch.diag(sim_cos, 0) / self.temperature) 
+            sim_E1i_E2j = torch.exp( (e2j_matrix * sim_cos) / self.temperature ).sum(dim=-1)# (N_P)
             loss_N_pair = -torch.log(sim_E1i_E1j / (sim_E1i_E1j + sim_E1i_E2j + 1e-8)+ 1e-8) 
             loss_mse = -sim_mse
             

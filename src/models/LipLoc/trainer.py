@@ -60,7 +60,6 @@ def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group["lr"]
 
-
 def make_train_valid_dfs():
         image_ids = get_filenames(CFG.train_sequences, CFG.data_path, CFG.data_path_360)
         np.random.seed(42)
@@ -69,8 +68,6 @@ def make_train_valid_dfs():
         )
         train_ids = [id_ for id_ in image_ids if id_ not in valid_ids]
         return train_ids, valid_ids
-
-
 
 def train_epoch(model, train_loader, optimizer, lr_scheduler, step):
     loss_meter = AvgMeter()
@@ -91,7 +88,6 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, step):
             train_loss=loss_meter.avg, lr=get_lr(optimizer))
     return loss_meter
 
-
 def valid_epoch(model, valid_loader):
     loss_meter = AvgMeter()
     tqdm_object = tqdm(valid_loader, total=len(valid_loader))
@@ -104,7 +100,6 @@ def valid_epoch(model, valid_loader):
 
         tqdm_object.set_postfix(valid_loss=loss_meter.avg)
     return loss_meter
-
 
 def main():
     print(CFG.details)

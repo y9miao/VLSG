@@ -287,17 +287,147 @@ def load_scan_depth_pcs(data_dir, scan_id, scale, intrinsic, depth_range, step=1
         depth_pcs[frame_idx] = pcs_valid
     return depth_pcs
 
-def load_scan_pcs(data_dir, scan_id, transform_rescan2ref, ref_coord = False):
+def load_scan_pcs(data_dir, scan_id, transform_rescan2ref, ref_coord = False, color=False):
     ply_data_npy_file = osp.join(data_dir, scan_id, 'data.npy')
     ply_data = np.load(ply_data_npy_file)
-    points = np.stack(
-        [ply_data['x'], ply_data['y'], ply_data['z'], np.ones_like(ply_data['x']) ]
-        ).transpose((1, 0))
+    if color:
+        points = np.stack(
+            [ply_data['x'], 
+             ply_data['y'], 
+             ply_data['z'], 
+             np.ones_like(ply_data['x']),
+             ply_data['red'], 
+             ply_data['green'], 
+             ply_data['blue'],]
+            ).transpose((1, 0))
+    else:
+        points = np.stack(
+            [ply_data['x'], 
+             ply_data['y'], 
+             ply_data['z'], 
+             np.ones_like(ply_data['x']) ]
+            ).transpose((1, 0))
     # the loaded point cloud is in the coordinate of the reference scan
     if not ref_coord and scan_id in transform_rescan2ref:
         T_ref2rescan = np.linalg.inv(transform_rescan2ref[scan_id]).astype(np.float32)
         # assert( abs(np.linalg.det(T_ref2rescan) - 1) < 1e-5)
         # T_ref2rescan = np.eye(4, dtype=np.float32)
-        points = np.asarray(points@ T_ref2rescan).astype(np.float32)
+        points[:,:4] = np.asarray(points[:,:4]@ T_ref2rescan).astype(np.float32)
     
     return points
+
+def createRangeImage(pcs, colors, center, fov_up, fov_down, proj_W, proj_H, range):
+    # pcs: (N, 4)
+    # colors: (N, 3)
+    # center: (3,)
+    # fov_up: float in degree
+    # fov_down: float in degree
+    # range: [float, float] - [min, max]
+    # return: (H, W, 3), (H, W, 3) - depth map and color map
+    
+    # laser parameters
+    fov_up = fov_up / 180.0 * np.pi  # field of view up in radians
+    fov_down = fov_down / 180.0 * np.pi  # field of view down in radians
+    fov = abs(fov_down) + abs(fov_up)  # get field of view total in radians
+
+    # get depth of all points
+    current_vertex = pcs - center
+    min_range = range[0]
+    max_range = range[1]
+    depth = np.linalg.norm(current_vertex[:, :3], 2, axis=1)
+    is_in_range = (depth > min_range) & (depth < max_range)
+    current_vertex = current_vertex[is_in_range]  # get rid of out of range points
+    colors = colors[is_in_range]
+    depth = depth[is_in_range]
+
+    # get scan components
+    scan_x = current_vertex[:, 0]
+    scan_y = current_vertex[:, 1]
+    scan_z = current_vertex[:, 2]
+
+    # get angles of all points
+    yaw = -np.arctan2(scan_y, scan_x)
+    pitch = np.arcsin(scan_z / depth)
+
+    # get projections in image coords
+    proj_x = 0.5 * (yaw / np.pi + 1.0)  # in [0.0, 1.0]
+    proj_y = 1.0 - (pitch + abs(fov_down)) / fov  # in [0.0, 1.0]
+
+    # scale to image size using angular resolution
+    proj_x *= proj_W  # in [0.0, W]
+    proj_y *= proj_H  # in [0.0, H]
+
+    # round and clamp for use as index
+    proj_x = np.floor(proj_x)
+    proj_x = np.minimum(proj_W - 1, proj_x)
+    proj_x = np.maximum(0, proj_x).astype(np.int32)  # in [0,W-1]
+
+    proj_y = np.floor(proj_y)
+    proj_y = np.minimum(proj_H - 1, proj_y)
+    proj_y = np.maximum(0, proj_y).astype(np.int32)  # in [0,H-1]
+
+    # order in decreasing depth
+    order = np.argsort(depth)[::-1]
+    depth = depth[order]
+    proj_y = proj_y[order]
+    proj_x = proj_x[order]
+    colors = colors[order, :]
+
+    indices = np.arange(depth.shape[0])
+    indices = indices[order]
+
+    proj_range = np.full((proj_H, proj_W, 3), 0,
+                        dtype=np.uint8)  # [H,W] range (-1 is no data)
+    proj_color = np.full((proj_H, proj_W, 3), 0,
+                        dtype=np.uint8)  # [H,W] index (0 is no data)
+
+    depth_uint8 = (depth / max_range * 255).astype(np.uint8)
+    proj_range[proj_y, proj_x] = np.stack( (depth_uint8,)*3, axis=-1)
+    proj_color[proj_y, proj_x] = colors
+    return proj_range, proj_color
+
+def loadScanMeshRange(mesh_file, fov_up, fov_down, range_min, range_max, range_H, range_W):
+    import open3d as o3d
+    # load scene
+    mesh = o3d.io.read_triangle_mesh(mesh_file)
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+    # generate rays 
+    rays = np.zeros((range_H * range_W, 6), dtype=np.float32)
+    degree_to_radian =  np.pi/180.0
+    yaws = np.linspace(-np.pi, np.pi, range_W, endpoint=False)
+    pitchs = np.linspace(fov_up*degree_to_radian,  fov_down * degree_to_radian, range_H, endpoint=False)
+    coord_x_W = np.cos(yaws)
+    coord_y_W = np.sin(yaws)
+    coord_z_H = np.sin(pitchs)
+    coord_index_xy, coord_index_z = np.meshgrid(np.arange(range_W), np.arange(range_H))
+    coord_x_W = coord_x_W[coord_index_xy.reshape(-1)]
+    coord_y_W = coord_y_W[coord_index_xy.reshape(-1)]
+    coord_z_H = coord_z_H[coord_index_z.reshape(-1)]
+    coords = np.stack((coord_x_W, coord_y_W, coord_z_H), axis=1)
+    coords = coords / np.linalg.norm(coords, axis=1, ord=2, keepdims=True)
+    rays[:, 3:] = coords
+    center = np.mean(np.asarray(mesh.vertices), axis=0)
+    rays[:, :3] = center
+    # raycasting
+    ans = scene.cast_rays(rays)
+    trian_ids = ans['primitive_ids'].numpy()
+    depth = ans['t_hit'].numpy()
+    valid_mask = np.logical_and(depth > range_min, depth < range_max)
+    depth_valid_norm = (depth[valid_mask] * 255.0 / range_max).astype(np.uint8)
+    # generate image
+    mesh_triangles = np.asarray(mesh.triangles)
+    colors = np.asarray(mesh.vertex_colors)*255.0
+    trians_valid = mesh_triangles[trian_ids[valid_mask]]
+    points_ids_valid = trians_valid[:, 0]
+    colors_valid = colors[points_ids_valid]
+    hit_points_ids_valid = np.arange(len(trian_ids))[valid_mask]
+    color_map = np.zeros((range_H, range_W, 3), dtype=np.uint8)
+    depth_map = np.zeros((range_H, range_W, 3), dtype=np.uint8)
+    coord_w = coord_index_xy.reshape(-1)[valid_mask]
+    coord_h = coord_index_z.reshape(-1)[valid_mask]
+    color_map[coord_h, coord_w] = colors_valid
+    depth_map[coord_h, coord_w] = depth_valid_norm.reshape(-1, 1)
+    
+    return depth_map, color_map
+    

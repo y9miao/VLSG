@@ -87,6 +87,14 @@ _C.train.loss.epsilon = 1e-8
 ## vis
 _C.train.use_vis = False
 _C.train.vis_epoch_steps = 10000
+## data augmentation
+_C.train.data_aug = CN()
+_C.train.data_aug.use_aug = False
+_C.train.data_aug.img = CN()
+_C.train.data_aug.img.rotation = 0.
+_C.train.data_aug.img.horizontal_flip = 0.
+_C.train.data_aug.img.vertical_flip = 0.
+_C.train.data_aug.img.color = 0.
 
 # for validation
 _C.val = CN()

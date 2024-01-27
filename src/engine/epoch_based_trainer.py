@@ -194,7 +194,7 @@ class EpochBasedTrainer(BaseTrainer):
         self.set_train_mode()
         while self.epoch < self.max_epoch:
             self.epoch += 1
-            if self.mode == 'train':
+            if self.mode == 'train' or self.mode == 'debug_few_scan':
                 self.train_epoch()
             self.inference_epoch()
 

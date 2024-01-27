@@ -123,7 +123,6 @@ class KITTI360Dataset(torch.utils.data.Dataset):
         # print("lidar points shape", lidar_points.shape)
         lidar_image = createRangeImage(lidar_points, self.CFG.crop) #TODO fix cropping for lidar range
 
-
         lidar_image = self.transforms(image=lidar_image)['image']
         item['lidar_image'] = torch.tensor(
             lidar_image).permute(2, 0, 1).float()
