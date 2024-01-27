@@ -37,7 +37,7 @@ def getPatchAnno(gt_anno_2D, patch_w, patch_h, th = 0.5):
                 patch_annos[patch_h_i,patch_w_j] = obj_ids[max_idx]
     return patch_annos
 
-class PatchObjectPairXTemporalDataSet(data.Dataset):
+class PatchObjectPairXTADataSet(data.Dataset):
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -498,7 +498,7 @@ if __name__ == '__main__':
     from configs import config, update_config
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week9/tranval_Npair_aug/Npair_cfg.yaml"
     cfg = update_config(config, cfg_file)
-    scan3r_ds = PatchObjectPairXTemporalDataSet(cfg, split='train')
+    scan3r_ds = PatchObjectPairXTADataSet(cfg, split='train')
     print(len(scan3r_ds))
     batch = [scan3r_ds[0], scan3r_ds[0]]
     data_batch = scan3r_ds.collate_fn(batch)
