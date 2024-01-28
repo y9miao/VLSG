@@ -1,0 +1,2 @@
+cd src
+python inference/sgaligner/inference_align_reg.py --config ../configs/scan3r/scan3r_ground_truth.yaml --snapshot ../output/Scan3R/sgaligner/point_gat_rel_attr/snapshots/best_snapshot.pth.tar --reg_snapshot ../output/geotransformer-3dmatch.pth.tar 
