@@ -95,7 +95,10 @@ _C.train.data_aug.img.rotation = 0.
 _C.train.data_aug.img.horizontal_flip = 0.
 _C.train.data_aug.img.vertical_flip = 0.
 _C.train.data_aug.img.color = 0.
-
+_C.train.data_aug.use_aug_3D = False
+_C.train.data_aug.pcs = CN()
+_C.train.data_aug.pcs.granularity = [0.05]
+_C.train.data_aug.pcs.magnitude = [0.]
 # for validation
 _C.val = CN()
 _C.val.batch_size = 1

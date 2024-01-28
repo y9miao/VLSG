@@ -9,6 +9,7 @@ import torch.utils.data as data
 from torchvision.transforms import transforms
 import cv2
 import sys
+import scipy
 
 from yaml import scan
 sys.path.append('..')
@@ -36,6 +37,70 @@ def getPatchAnno(gt_anno_2D, patch_w, patch_h, th = 0.5):
             if(max_count > th*patch_size):
                 patch_annos[patch_h_i,patch_w_j] = obj_ids[max_idx]
     return patch_annos
+
+class ElasticDistortion: # from torch-points3d
+    """Apply elastic distortion on sparse coordinate space. First projects the position onto a 
+    voxel grid and then apply the distortion to the voxel grid.
+
+    Parameters
+    ----------
+    granularity: List[float]
+        Granularity of the noise in meters
+    magnitude:List[float]
+        Noise multiplier in meters
+    Returns
+    -------
+    data: Data
+        Returns the same data object with distorted grid
+    """
+
+    def __init__(
+        self, apply_distorsion: bool = True, granularity: list = [0.2, 0.8], magnitude=[0.4, 1.6],
+    ):
+        assert len(magnitude) == len(granularity)
+        self._apply_distorsion = apply_distorsion
+        self._granularity = granularity
+        self._magnitude = magnitude
+
+    @staticmethod
+    def elastic_distortion(coords, granularity, magnitude):
+        coords = coords.numpy()
+        blurx = np.ones((3, 1, 1, 1)).astype("float32") / 3
+        blury = np.ones((1, 3, 1, 1)).astype("float32") / 3
+        blurz = np.ones((1, 1, 3, 1)).astype("float32") / 3
+        coords_min = coords.min(0)
+
+        # Create Gaussian noise tensor of the size given by granularity.
+        noise_dim = ((coords - coords_min).max(0) // granularity).astype(int) + 3
+        noise = np.random.randn(*noise_dim, 3).astype(np.float32)
+
+        # Smoothing.
+        for _ in range(2):
+            noise = scipy.ndimage.filters.convolve(noise, blurx, mode="constant", cval=0)
+            noise = scipy.ndimage.filters.convolve(noise, blury, mode="constant", cval=0)
+            noise = scipy.ndimage.filters.convolve(noise, blurz, mode="constant", cval=0)
+
+        # Trilinear interpolate noise filters for each spatial dimensions.
+        ax = [
+            np.linspace(d_min, d_max, d)
+            for d_min, d_max, d in zip(coords_min - granularity, coords_min + granularity * (noise_dim - 2), noise_dim)
+        ]
+        interp = scipy.interpolate.RegularGridInterpolator(ax, noise, bounds_error=0, fill_value=0)
+        coords = coords + interp(coords) * magnitude
+        return torch.tensor(coords).float()
+
+    def __call__(self, pcs_pos):
+        # coords = pcs_pos / self._spatial_resolution
+        if self._apply_distorsion:
+            if random.random() < 0.95:
+                for i in range(len(self._granularity)):
+                    pcs_pos = ElasticDistortion.elastic_distortion(pcs_pos, self._granularity[i], self._magnitude[i],)
+        return pcs_pos
+
+    def __repr__(self):
+        return "{}(apply_distorsion={}, granularity={}, magnitude={})".format(
+            self.__class__.__name__, self._apply_distorsion, self._granularity, self._magnitude,
+        )
 
 class PatchObjectPairXTASGDataSet(data.Dataset):
     def __init__(self, cfg, split):
@@ -170,6 +235,11 @@ class PatchObjectPairXTASGDataSet(data.Dataset):
             brightness=color_jitter, contrast=color_jitter, saturation=color_jitter, hue=color_jitter)
         
         ## 3D obj TODO
+        self.elastic_distortion = ElasticDistortion(
+            apply_distorsion=cfg.train.data_aug.use_aug_3D,
+            granularity=cfg.train.data_aug.pcs.granularity,
+            magnitude=cfg.train.data_aug.pcs.magnitude,
+        )
             
         # generate data items given multiple scans
         self.data_items = self.generateDataItems()
@@ -364,12 +434,13 @@ class PatchObjectPairXTASGDataSet(data.Dataset):
         if self.img_rotate:
             obj_2D_anno = obj_2D_anno.transpose(1, 0)
             obj_2D_anno = np.flip(obj_2D_anno, 1)
-        ## data augmentation
+        ## 2D data augmentation
         if self.use_aug and self.split == 'train':
             augments_2D = self.trans_2D(image=img, mask=obj_2D_anno)
             img = augments_2D['image']
             obj_2D_anno = augments_2D['mask']
             img = self.brightness_2D(image=img)['image']
+            
         # 2D patch anno
         if self.img_rotate:
             patch_h = self.image_patch_w
@@ -449,6 +520,12 @@ class PatchObjectPairXTASGDataSet(data.Dataset):
         scene_graphs_['pcl_center'] = self.aggretateDataDicts(scene_graph_infos, 'pcl_center', 'np_stack')
         scans_size = len(scene_graph_infos)
         scene_graphs_['batch_size'] = scans_size
+        ### 3D pcs data augmentation by elastic distortion
+        num_obs = scene_graphs_['tot_obj_pts'].shape[1]
+        pcs_flatten = scene_graphs_['tot_obj_pts'].reshape(-1, 3)
+        pcs_distorted_flatten = self.elastic_distortion(pcs_flatten)
+        scene_graphs_['tot_obj_pts'] = pcs_distorted_flatten.reshape(-1, num_obs, 3)
+        
         data_dict['scene_graphs'] = scene_graphs_
         if self.room_retrieval:
             data_dict['candata_scan_obj_idxs'] = candata_scan_obj_idxs
