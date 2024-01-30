@@ -17,6 +17,7 @@ data :
     img_rotate: True # rotate w,h for backbone GCVit
     patch_w: 32 # number of patchs in width
     patch_h: 18
+    reduce: 1 
     feature_dir: "Features2D/GCVit_16_9_scan"
   obj_img:
     topk: 10

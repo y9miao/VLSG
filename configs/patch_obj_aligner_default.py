@@ -36,6 +36,7 @@ _C.data.cross_scene.num_negative_samples = 0 # -1 means
 
 _C.data.scene_graph = CN()
 _C.data.scene_graph.obj_img_patch = ""
+_C.data.scene_graph.obj_patch_num = 1
 
 # model
 _C.model = CN()

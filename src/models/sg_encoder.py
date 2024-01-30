@@ -88,7 +88,7 @@ class MultiModalEncoder(nn.Module):
         self.structure_encoder = MultiGAT(n_units=self.hidden_units, n_heads=self.heads, dropout=self.dropout)
         self.structure_embedding = nn.Linear(256, self.emb_dim)
         
-        self.img_patch_encoder = PatchAggregator(d_model=img_feat_dim, nhead=4, num_layers=2, dropout=self.dropout)
+        self.img_patch_encoder = PatchAggregator(d_model=img_feat_dim, nhead=2, num_layers=1, dropout=self.dropout)
         self.img_patch_embedding = nn.Linear(img_feat_dim, self.emb_dim)
         
         self.fusion = MultiModalFusion(modal_num=self.inner_view_num, with_weight=1)

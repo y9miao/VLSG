@@ -307,6 +307,7 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
         # load 3D obj image patch paths for each scan
         self.img_patch_dim = self.cfg.sgaligner.model.img_patch_dim
         obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
+        self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
         self.obj_3D_img_patch_paths = {}
         for scan_id in self.all_scans_split:
             self.obj_3D_img_patch_paths[scan_id] = osp.join(
@@ -555,6 +556,10 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
                         obj_img_patch_embs = np.zeros((1, self.img_patch_dim))
                     else:
                         obj_img_patch_embs = np.concatenate(obj_img_patch_embs, axis=0)
+                        if obj_img_patch_embs.shape[0] > self.obj_patch_num:
+                            random_idx = np.random.choice(obj_img_patch_embs.shape[0], self.obj_patch_num, replace=False)
+                            obj_img_patch_embs = obj_img_patch_embs[random_idx, :]
+                        
                     obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
                     
                 obj_count_ += scene_graphs_['tot_obj_count'][scan_idx]
