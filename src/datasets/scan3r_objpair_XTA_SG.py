@@ -521,10 +521,11 @@ class PatchObjectPairXTASGDataSet(data.Dataset):
         scans_size = len(scene_graph_infos)
         scene_graphs_['batch_size'] = scans_size
         ### 3D pcs data augmentation by elastic distortion
-        num_obs = scene_graphs_['tot_obj_pts'].shape[1]
-        pcs_flatten = scene_graphs_['tot_obj_pts'].reshape(-1, 3)
-        pcs_distorted_flatten = self.elastic_distortion(pcs_flatten)
-        scene_graphs_['tot_obj_pts'] = pcs_distorted_flatten.reshape(-1, num_obs, 3)
+        if self.use_aug and self.split == 'train':
+            num_obs = scene_graphs_['tot_obj_pts'].shape[1]
+            pcs_flatten = scene_graphs_['tot_obj_pts'].reshape(-1, 3)
+            pcs_distorted_flatten = self.elastic_distortion(pcs_flatten)
+            scene_graphs_['tot_obj_pts'] = pcs_distorted_flatten.reshape(-1, num_obs, 3)
         
         data_dict['scene_graphs'] = scene_graphs_
         if self.room_retrieval:

@@ -1,0 +1,84 @@
+seed: 42
+
+data :
+  name            : Scan3R
+  root_dir        : '' # to be read in code from env varia  
+  rescan: True
+  resplit: True
+  log_dir: ""
+  img:
+    img_step: 1
+    w: 960
+    h: 540
+  img_encoding:
+    # image patch config
+    resize_w: 1024 # resize image for backbone GCVit
+    resize_h: 576
+    img_rotate: True # rotate w,h for backbone GCVit
+    patch_w: 32 # number of patchs in width
+    patch_h: 18
+    feature_dir: "Features2D/GCVit_16_9_scan"
+  obj_img:
+    topk: 10
+    name: "Features3D/obj_GCVit_16_9_scan_top10"
+
+model:
+  name: GCVit_16_9_scan
+  version: "GCVit"
+  cfg_file: "/home/yang/big_ssd/Scan3R/VLSG/src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py"
+  pretrained: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/GCVit/gcvit_1k_tiny.pth.tar"
+  # GCVit backbone
+  backbone: 
+    # to be read in code from env varia, relative to VLSG_SPACE
+    use_pretrained: True
+    cfg_file: "./src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py"
+    pretrained: "./checkpoint/GCVit/gcvit_1k_tiny.pth.tar"
+    num_reduce: 1 # should be log2(resize_w/(32*patch_w))
+    backbone_dim: 512 # fixed
+  # patch feature encoder
+  patch:
+    hidden_dims: [512, 512, 512] # last is the out dim
+    encoder_dim: 400
+  # 3D obj embedding encoder
+  obj:
+    embedding_dim: 400 # fixed
+    embedding_hidden_dims: [512, 512]
+    encoder_dim: 400
+  other:
+    drop: 0.0
+
+# for sgaligner
+sgaligner:
+  use_pretrained : True
+  pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
+
+  label_file_name : labels.instances.annotated.v2.ply
+  pred_subfix     : inseg.ply
+
+  seed: 42
+  model_name    : 'sgaligner'
+  modules       : ['point', 'gat', 'rel', 'attr']
+  use_predicted : False
+  registration  : False
+  scan_type     : 'scan'
+
+  preprocess :
+    pc_resolutions      : [64, 128, 256, 512]
+    subscenes_per_scene : 1
+    filter_segment_size : 512
+    min_obj_points      : 50
+    anchor_type_name    : '' 
+
+  model :
+    rel_dim             : 41
+    attr_dim            : 164
+    alignment_thresh    : 0.4
+
+  train :
+    pc_res: 512
+
+  val :
+    pc_res: 512
+    overlap_low         : 0.0
+    overlap_high        : 0.0
+    data_mode: orig

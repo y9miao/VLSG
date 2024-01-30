@@ -4,6 +4,7 @@ import json
 from glob import glob
 from plyfile import PlyData, PlyElement
 import cv2
+import pickle
 
 def get_scan_ids(dirname, split):
     filepath = osp.join(dirname, '{}_scans.txt'.format(split))
@@ -108,7 +109,7 @@ def load_depth_paths(data_dir, scan_id, skip=None):
 def load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip=None):
     features_path = {}
     frame_idxs = load_frame_idxs(osp.join(data_root_dir, "scenes"), scan_id, skip)
-    features_scan_folder = osp.join(feature_folder, scan_id)
+    features_scan_folder = osp.join(data_root_dir, 'files', feature_folder, scan_id)
     for frame_idx in frame_idxs:
         features_frame_file = osp.join(features_scan_folder, "frame-{}.npy".format(frame_idx))
         features_path[frame_idx] = features_frame_file
@@ -116,11 +117,19 @@ def load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip=None):
 
 def load_patch_features(data_root_dir, feature_folder, scan_id, skip=None):
     features_path = load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip)
-    
     features = {}
     for frame_idx, feature_path in features_path.items():
         features[frame_idx] = np.load(feature_path)
     return features
+def load_patch_features_scan(data_files_dir, feature_folder, scan_id):
+    features_file_path = osp.join(data_files_dir, feature_folder, scan_id+".pkl")
+    features = load_pkl_data(features_file_path)
+    return features
+def load_pkl_data(filename):
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+    return data_dict
+
 
 def load_gt_2D_anno(data_root_dir, scan_id, skip=None):
     anno_imgs = {}
