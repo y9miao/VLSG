@@ -231,6 +231,7 @@ if __name__ == '__main__':
     os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/obj_visual_embeddings.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_ds = ObjVisualEmbGen(cfg, split='test')
-    scan3r_ds.generateObjVisualEmb()
+    scan3r_ds = ObjVisualEmbGen(cfg, split='train')
+    # scan3r_ds.generateObjVisualEmb()
+    obj_patch_info = scan3r_ds.generateObjVisualEmbScan("6a36053b-fa53-2915-9716-6b5361c7791a")
     breakpoint=None

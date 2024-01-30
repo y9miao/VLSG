@@ -34,6 +34,9 @@ _C.data.cross_scene.use_cross_scene = False
 _C.data.cross_scene.num_scenes = 0
 _C.data.cross_scene.num_negative_samples = 0 # -1 means 
 
+_C.data.scene_graph = CN()
+_C.data.scene_graph.obj_img_patch = ""
+
 # model
 _C.model = CN()
 _C.model.backbone = CN()

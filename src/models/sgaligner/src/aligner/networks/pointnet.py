@@ -9,6 +9,10 @@ from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
 from torchsummary import summary
+import os
+import sys
+src_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+sys.path.append(src_dir)
 from aligner.networks.base import BaseNetwork
 
 class STN3d(nn.Module):
