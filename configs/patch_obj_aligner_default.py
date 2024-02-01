@@ -59,6 +59,8 @@ _C.model.other.drop = 0.0
 
 # for training
 _C.train = CN()
+_C.train.gpus = 1
+_C.train.precision = 16
 _C.train.batch_size = 1
 _C.train.num_workers = 1
 _C.train.freeze_backbone = False

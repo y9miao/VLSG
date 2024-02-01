@@ -1,5 +1,7 @@
 import os
 import os.path as osp
+from weakref import ref
+from attr import assoc
 import comm
 import numpy as np
 import random
@@ -10,11 +12,14 @@ from torchvision.transforms import transforms
 import cv2
 import sys
 import scipy
+import tqdm
 
 from yaml import scan
+
 sys.path.append('..')
 sys.path.append('../..')
 from utils import common, scan3r
+
 
 def getPatchAnno(gt_anno_2D, patch_w, patch_h, th = 0.5):
     image_h, image_w = gt_anno_2D.shape
@@ -102,7 +107,7 @@ class ElasticDistortion: # from torch-points3d
             self.__class__.__name__, self._apply_distorsion, self._granularity, self._magnitude,
         )
 
-class PatchObjectPairXTASGIDataSet(data.Dataset):
+class PatchObjectPairXTAESGIDataSet(data.Dataset):
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -139,9 +144,14 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
         # 2D_patch_anno_dir
         self.image_patch_w = self.cfg.data.img_encoding.patch_w
         self.image_patch_h = self.cfg.data.img_encoding.patch_h
+        # 2D patch anno
+        if self.img_rotate:
+            self.patch_h = self.image_patch_w
+            self.patch_w = self.image_patch_h
+        else:
+            self.patch_h = self.image_patch_h
+            self.patch_w = self.image_patch_w
         self.step = self.cfg.data.img.img_step
-        # self.patch_w_size_int = int(self.image_w / self.image_patch_w)
-        # self.patch_h_size_int = int(self.image_h / self.image_patch_h)
         self.num_patch = self.image_patch_w * self.image_patch_h
         self.patch_anno_folder_name = "patch_anno_{}_{}".format(self.image_patch_w, self.image_patch_h)
         self.scans_2Dpatch_anno_dir = osp.join(self.scans_files_dir, "patch_anno", self.patch_anno_folder_name)
@@ -209,10 +219,13 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
         # load 2D gt obj id annotation
         self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
         self.obj_2D_annos = {}
+        self.obj_2D_annos_path = {}
         for scan_id in self.scan_ids:
             anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
-            self.obj_2D_annos[scan_id] = common.load_pkl_data(anno_2D_file)
-            
+            anno_2D = common.load_pkl_data(anno_2D_file)
+            anno_2D_step = {frame_idx: anno_2D[frame_idx] for frame_idx in anno_2D if int(frame_idx) % self.step == 0}
+            self.obj_2D_annos[scan_id] = anno_2D_step
+        
         # load 3D scene graph information
         self.load3DSceneGraphs()
                 
@@ -313,8 +326,7 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
             self.obj_3D_img_patch_paths[scan_id] = osp.join(
                 self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
 
-    # sample objects and other scenes for each data item 
-    def sampleObjCrossScenes(self, scan_id, num_scenes, num_objects):
+    def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
         candidate_scans = []
         scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
         # sample other scenes
@@ -322,24 +334,37 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
             if scan not in scans_same_scene:
                 candidate_scans.append(scan)
         sampled_scans = random.sample(candidate_scans, num_scenes)
+        return sampled_scans
+    
+    def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
+        candidate_scans = {}
         
-        # sample objects of sampled scenes
-        candidate_objs = []
-        for sampled_scan_id in sampled_scans:
-            # record scan_id, obj_id, category for each candidate object
-            # some obj may not have embeddings, thus only sample from objs with embeddings
-            candidate_objs += [self.obj_3D_anno[sampled_scan_id][obj_id] 
-                               for obj_id in self.scene_graphs[sampled_scan_id]['obj_ids']]
-        sampled_objs = []
-        if num_objects >= 0:
-            if num_objects < len(candidate_objs):
-                sampled_objs = random.sample(candidate_objs, num_objects)
-            else:
-                # sample all objects if not enough objects
-                sampled_objs = candidate_objs
-        else:
-            sampled_objs = candidate_objs
-        return sampled_objs
+        # ref scans of input scans
+        ref_scans = [self.scans2refscans[scan_id] for scan_id in scan_ids]
+        ref_scans = list(set(ref_scans))
+        num_ref_scans = len(ref_scans)
+        
+        if num_ref_scans > num_scenes: # if enough ref scans, no need to sample other scenes
+            for scan_id in scan_ids:
+                candidate_scan_pool = [scan for scan in scan_ids if scan not in self.refscans2scans[self.scans2refscans[scan_id]]]
+                candidate_scan_pool = list(set(candidate_scan_pool))
+                candidate_scans[scan_id] = random.sample(candidate_scan_pool, num_scenes)
+        else: # if not enough ref scans, sample other additional scenes
+            num_scans_to_be_sampled = num_scenes - num_ref_scans + 1
+            additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
+            additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
+            for scan_id in scan_ids:
+                # first get scans in the batch
+                candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] not in ref_scans]
+                candidate_scan_pool = list(set(candidate_scan_pool))
+                num_scans_to_be_sampled_curr = num_scenes - len(candidate_scan_pool)
+                candidate_scans_curr = candidate_scan_pool + random.sample(additional_candidates, num_scans_to_be_sampled_curr)
+                candidate_scans[scan_id] = list(set(candidate_scans_curr))
+        candidate_scans_all = list(set([scan for scan_list in candidate_scans.values() for scan in scan_list]))
+        union_scans = list(set(scan_ids + candidate_scans_all))
+        
+
+        return candidate_scans, union_scans
     
     # sample cross time for each data item
     def sampleScanCrossTime(self, scan_id):
@@ -359,7 +384,6 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
         # iterate over scans
         for scan_id in self.scan_ids:
             # iterate over images
-            obj_2D_anno = self.obj_2D_annos[scan_id]
             image_paths = self.image_paths[scan_id]
             for frame_idx in image_paths:
                 data_item_dict = {}
@@ -368,61 +392,25 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
                     data_item_dict['patch_features'] = self.patch_features[scan_id][frame_idx]
                 else:
                     data_item_dict['img_path'] = image_paths[frame_idx]
-                data_item_dict['obj_2D_anno'] = obj_2D_anno[frame_idx]
                 data_item_dict['frame_idx'] = frame_idx
                 # 3D info
                 data_item_dict['scan_id'] = scan_id
                 data_items.append(data_item_dict)
-                # sample cross scenes
-                if self.use_cross_scene:
-                    sampled_objs = self.sampleObjCrossScenes(scan_id, self.num_scenes, self.num_negative_samples)
-                    data_item_dict['obj_across_scenes'] = sampled_objs
-                else:
-                    data_item_dict['obj_across_scenes'] = []
 
-                # temporal data item, across scan time 
-                if self.temporal:
-                    data_item_dict['scan_id_across_time'] = self.sampleScanCrossTime(scan_id)
-                    
         # if debug with single scan
         if self.cfg.mode == "debug_few_scan":
             return data_items[:1]
         return data_items
     
     def dataItem2DataDict(self, data_item, temporal=False):
-        if temporal and data_item['scan_id_across_time'] is None:
-            return None
+        data_dict = {}
         
-        # 3D object embeddings
-        img_scan_id = data_item['scan_id']
-        scan_id = data_item['scan_id'] if not temporal else data_item['scan_id_across_time']
-        scene_graph_info = self.scene_graphs[scan_id]
-        objs_ids_cur_scan = scene_graph_info['obj_ids']
-        num_objs = len(objs_ids_cur_scan)
-        num_objs_across_scenes = len(data_item['obj_across_scenes'])
-        obj_3D_id2idx = {} # only for objs in current scene
-        obj_3D_idx2info = {} # for objs in current scene and other scenes
-        candata_scan_obj_idxs = {}
-        idx = 0
-        scene_graph_infos = []
-        ## objects within current scene
-        scene_graph_infos.append(self.scene_graphs[scan_id])
-        for obj_id in objs_ids_cur_scan:
-            obj_3D_id2idx[obj_id] = idx
-            obj_3D_idx2info[idx] = self.obj_3D_anno[scan_id][obj_id]
-            if scan_id not in candata_scan_obj_idxs:
-                candata_scan_obj_idxs[scan_id] = []
-            candata_scan_obj_idxs[scan_id].append(idx)
-            idx += 1 
-        ## objects across scenes
-        for obj_info in data_item['obj_across_scenes']:
-            obj_3D_idx2info[idx] = obj_info
-            scan_id_X = obj_info[0]
-            if scan_id_X not in candata_scan_obj_idxs:
-                candata_scan_obj_idxs[scan_id_X] = []
-                scene_graph_infos.append(self.scene_graphs[scan_id_X])
-            candata_scan_obj_idxs[scan_id_X].append(idx)
-            idx += 1
+        # scan id of data point
+        scan_id = data_item['scan_id']
+        # sample over time if temporal
+        if temporal:
+            data_dict['scan_id_temporal'] = self.sampleScanCrossTime(scan_id)
+            
         # 2D data
         ## 2D path features
         frame_idx = data_item['frame_idx']
@@ -438,7 +426,10 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
                 img = img.transpose(1, 0, 2)
                 img = np.flip(img, 1)
         ## 2D gt obj anno
-        obj_2D_anno = data_item['obj_2D_anno']
+        # obj_2D_anno_path = self.obj_2D_annos_path[scan_id]
+        # obj_2D_anno_frames = common.load_pkl_data(obj_2D_anno_path)
+        # obj_2D_anno = obj_2D_anno_frames[frame_idx]
+        obj_2D_anno = self.obj_2D_annos[scan_id][frame_idx]
         obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
                         interpolation=cv2.INTER_NEAREST) # type: ignore
         if self.img_rotate:
@@ -452,38 +443,96 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
             img = self.brightness_2D(image=img)['image']
             
         # 2D patch anno
-        if self.img_rotate:
-            patch_h = self.image_patch_w
-            patch_w = self.image_patch_h
-        else:
-            patch_h = self.image_patch_h
-            patch_w = self.image_patch_w
-        obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.3)
+        patch_h, patch_w = self.patch_h, self.patch_w
+        obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.2)
         obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
-        # generate relationship matrix for contrast learning 
+            
+        # frame info
+        data_dict['scan_id'] = scan_id
+        data_dict['frame_idx'] = frame_idx
+        data_dict['obj_2D_patch_anno_flatten'] = obj_2D_patch_anno_flatten
+        if self.cfg.data.img_encoding.use_feature:
+            data_dict['patch_features'] = patch_features
+        else:
+            data_dict['image'] = img
+            if self.cfg.data.img_encoding.record_feature:
+                data_dict['patch_features_path'] = self.patch_features_paths[scan_id][frame_idx]
+        return data_dict
+    
+    def generateObjPatchAssociationDataDict(self, data_item, candidate_scans, sg_obj_idxs):
+        scan_id = data_item['scan_id']
+        candidate_scans = candidate_scans[scan_id]
+        gt_2D_anno_flat = data_item['obj_2D_patch_anno_flatten']
+        assoc_data_dict = self.generateObjPatchAssociationScan(scan_id, candidate_scans, gt_2D_anno_flat, sg_obj_idxs)
+        
+        # temporal 
+        if self.temporal:
+            scan_id_temporal = data_item['scan_id_temporal']
+            assoc_data_dict_temporal = self.generateObjPatchAssociationScan(
+                scan_id_temporal, candidate_scans, gt_2D_anno_flat, sg_obj_idxs)
+            return assoc_data_dict, assoc_data_dict_temporal
+        else:
+            return assoc_data_dict, None
+        
+    def generateObjPatchAssociationScan(self, scan_id, candidate_scans, gt_2D_anno_flat, sg_obj_idxs):
+        obj_3D_idx2info = {} # for objs in current scene and other scenes
+        obj_3D_id2idx_cur_scan = {} # for objs in current scene
+        scans_sg_obj_idxs = [] # for current scene and other scenes
+        candata_scan_obj_idxs = {}
+        ## cur scan objs
+        objs_ids_cur_scan = self.scene_graphs[scan_id]['obj_ids']
+        idx = 0
+        for obj_id in objs_ids_cur_scan:
+            obj_3D_idx2info[idx] = self.obj_3D_anno[scan_id][obj_id]
+            obj_3D_id2idx_cur_scan[obj_id] = idx
+            scans_sg_obj_idxs.append(sg_obj_idxs[scan_id][obj_id])
+            if scan_id not in candata_scan_obj_idxs:
+                candata_scan_obj_idxs[scan_id] = []
+            candata_scan_obj_idxs[scan_id].append(idx)
+            idx += 1 
+        
+        ## other scans objs
+        for cand_scan_id in candidate_scans:
+            objs_ids_cand_scan = self.scene_graphs[cand_scan_id]['obj_ids']
+            for obj_id in objs_ids_cand_scan:
+                obj_3D_idx2info[idx] = self.obj_3D_anno[cand_scan_id][obj_id]
+                scans_sg_obj_idxs.append(sg_obj_idxs[cand_scan_id][obj_id])
+                if cand_scan_id not in candata_scan_obj_idxs:
+                    candata_scan_obj_idxs[cand_scan_id] = []
+                candata_scan_obj_idxs[cand_scan_id].append(idx)
+                idx += 1
+            candata_scan_obj_idxs[cand_scan_id] = torch.Tensor(
+                candata_scan_obj_idxs[cand_scan_id]).long()
+        candata_scan_obj_idxs[scan_id] = torch.Tensor(candata_scan_obj_idxs[scan_id]).long()
+        ## to numpy
+        scans_sg_obj_idxs = np.array(scans_sg_obj_idxs, dtype=np.int32)
+        ## to torch
+        scans_sg_obj_idxs = torch.from_numpy(scans_sg_obj_idxs).long()
+                
+        ## generate obj patch association
         ## From 2D to 3D, denote as e1i_matrix, e1j_matrix, e2j_matrix      
         ## e1i_matrix,(num_patch, num_3D_obj), record 2D-3D patch-object pairs
         ## e2j_matrix,(num_patch, num_3D_obj), record 2D-3D patch-object unpairs
-        e1i_matrix = np.zeros( (self.num_patch, num_objs+num_objs_across_scenes), dtype=np.uint8)
-        e2j_matrix = np.ones( (self.num_patch, num_objs+num_objs_across_scenes), dtype=np.uint8)
-        for patch_h_i in range(patch_h):
-            patch_h_shift = patch_h_i*patch_w
-            for patch_w_j in range(patch_w):
-                obj_id = obj_2D_patch_anno[patch_h_i, patch_w_j]
-                if obj_id != self.undefined and (obj_id in obj_3D_id2idx):
-                    obj_idx = obj_3D_id2idx[obj_id]
+        num_objs = idx
+        e1i_matrix = np.zeros( (self.num_patch, num_objs), dtype=np.uint8)
+        e2j_matrix = np.ones( (self.num_patch, num_objs), dtype=np.uint8)
+        for patch_h_i in range(self.patch_h):
+            patch_h_shift = patch_h_i*self.patch_w
+            for patch_w_j in range(self.patch_w):
+                obj_id = gt_2D_anno_flat[patch_h_shift + patch_w_j]
+                if obj_id != self.undefined and (obj_id in obj_3D_id2idx_cur_scan):
+                    obj_idx = obj_3D_id2idx_cur_scan[obj_id]
                     e1i_matrix[patch_h_shift+patch_w_j, obj_idx] = 1 # mark 2D-3D patch-object pairs
                     e2j_matrix[patch_h_shift+patch_w_j, obj_idx] = 0 # mark 2D-3D patch-object unpairs
-                
         ## e1j_matrix, (num_patch, num_patch), mark unpaired patch-patch pair for image patches
         e1j_matrix = np.zeros( (self.num_patch, self.num_patch), dtype=np.uint8)
-        for patch_h_i in range(patch_h):
-            patch_h_shift = patch_h_i*patch_w
-            for patch_w_j in range(patch_w):
-                obj_id = obj_2D_patch_anno[patch_h_i, patch_w_j]
-                if obj_id != self.undefined and obj_id in obj_3D_id2idx:
+        for patch_h_i in range(self.patch_h):
+            patch_h_shift = patch_h_i*self.patch_w
+            for patch_w_j in range(self.patch_w):
+                obj_id = gt_2D_anno_flat[patch_h_shift + patch_w_j]
+                if obj_id != self.undefined and obj_id in obj_3D_id2idx_cur_scan:
                     e1j_matrix[patch_h_shift+patch_w_j, :] = np.logical_and(
-                        obj_2D_patch_anno_flatten != self.undefined, obj_2D_patch_anno_flatten != obj_id
+                        gt_2D_anno_flat != self.undefined, gt_2D_anno_flat != obj_id
                     )
                 else:
                      e1j_matrix[patch_h_shift+patch_w_j, :] = 1
@@ -494,25 +543,66 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
         obj_cates = [obj_3D_idx2info[obj_idx][2] for obj_idx in range(len(obj_3D_idx2info))]
         obj_cates_arr = np.array(obj_cates)
         f1j_matrix = obj_cates_arr.reshape(1, -1) != obj_cates_arr.reshape(-1, 1)
-            
-        data_dict = {}
-        # frame info
-        data_dict['scan_id'] = scan_id
-        data_dict['img_scan_id'] = data_item['scan_id']
-        data_dict['frame_idx'] = frame_idx
-        if self.cfg.data.img_encoding.use_feature:
-            data_dict['patch_features'] = patch_features
+        
+        assoc_data_dict = {
+            'e1i_matrix': torch.from_numpy(e1i_matrix).float(),
+            'e1j_matrix': torch.from_numpy(e1j_matrix).float(),
+            'e2j_matrix': torch.from_numpy(e2j_matrix).float(),
+            'f1j_matrix': torch.from_numpy(f1j_matrix).float(),
+            'scans_sg_obj_idxs': scans_sg_obj_idxs,
+            'candata_scan_obj_idxs': candata_scan_obj_idxs
+        }
+        return assoc_data_dict
+    
+    def aggretateDataDicts(self, data_dict, key, mode):
+        if mode == 'torch_cat':
+            return torch.cat([data[key] for data in data_dict])
+        elif mode == 'torch_stack':
+            return torch.stack([data[key] for data in data_dict])
+        elif mode == 'np_concat':
+            return np.concatenate([data[key] for data in data_dict])
+        elif mode == 'np_stack':
+            return np.stack([data[key] for data in data_dict])
         else:
-            data_dict['image'] = img
+            raise NotImplementedError
+    
+    def collateBatchDicts(self, batch):
+        scans_batch = [data['scan_id'] for data in batch]
+        
+        # sample candidate scenes for each scan
+        if self.use_cross_scene:
+            candidate_scans, union_scans = self.sampleCandidateScenesForScans(scans_batch, self.num_scenes)
+        else:
+            candidate_scans, union_scans = [], scans_batch
+        
+        batch_size = len(batch)
+        data_dict = {}
+        data_dict['batch_size'] = batch_size
+        data_dict['temporal'] = self.temporal
+        # frame info 
+        data_dict['scan_ids'] = np.stack([data['scan_id'] for data in batch])
+        if self.temporal:
+            data_dict['scan_ids_temporal'] = np.stack([data['scan_id_temporal'] for data in batch])
+        data_dict['frame_idxs'] = np.stack([data['frame_idx'] for data in batch])
+        # 2D img info
+        if self.cfg.data.img_encoding.use_feature:
+            patch_features_batch = np.stack([data['patch_features'] for data in batch]) # (B, P_H, P_W, D)
+            data_dict['patch_features'] = torch.from_numpy(patch_features_batch).float() # (B, H, W, C)
+        else:
+            images_batch = np.stack([data['image'] for data in batch])
+            data_dict['images'] = torch.from_numpy(images_batch).float() # (B, H, W, C)
             if self.cfg.data.img_encoding.record_feature:
-                data_dict['patch_features_path'] = self.patch_features_paths[img_scan_id][frame_idx]
+                data_dict['patch_features_paths'] = [data['patch_features_path'] for data in batch]
+        data_dict['obj_2D_patch_anno_flatten_list'] = \
+            [ torch.from_numpy(data['obj_2D_patch_anno_flatten']) for data in batch] # B - [N_P]
         # 3D scene graph info
-        ## obj info
-        data_dict['num_objs'] = len(obj_3D_id2idx)
-        data_dict['num_objs_across_scenes'] = num_objs_across_scenes
-        data_dict['obj_3D_id2idx'] = obj_3D_id2idx
-        data_dict['obj_3D_idx2info'] = obj_3D_idx2info
         ## scene graph info
+        ### include temporal scans 
+        if self.temporal:
+            scene_graph_scans = list(set(union_scans + [data['scan_id_temporal'] for data in batch]))
+        else:
+            scene_graph_scans = union_scans
+        scene_graph_infos = [self.scene_graphs[scan_id] for scan_id in scene_graph_scans]
         scene_graphs_ = {}
         scans_size = len(scene_graph_infos)
         scene_graphs_['batch_size'] = scans_size
@@ -530,6 +620,12 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
         scene_graphs_['global_obj_ids'] = self.aggretateDataDicts(scene_graph_infos, 'global_obj_ids', 'np_concat')
         scene_graphs_['scene_ids'] = self.aggretateDataDicts(scene_graph_infos, 'scene_ids', 'np_stack')
         scene_graphs_['pcl_center'] = self.aggretateDataDicts(scene_graph_infos, 'pcl_center', 'np_stack')
+        ### 3D pcs data augmentation by elastic distortion
+        if self.use_aug and self.split == 'train':
+            num_obs = scene_graphs_['tot_obj_pts'].shape[1]
+            pcs_flatten = scene_graphs_['tot_obj_pts'].reshape(-1, 3)
+            pcs_distorted_flatten = self.elastic_distortion(pcs_flatten)
+            scene_graphs_['tot_obj_pts'] = pcs_distorted_flatten.reshape(-1, num_obs, 3)
         ### img patch features 
         if 'img_patch' in self.sgaligner_modules:
             obj_img_patches = {}
@@ -564,84 +660,35 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
                     
                 obj_count_ += scene_graphs_['tot_obj_count'][scan_idx]
             scene_graphs_['obj_img_patches'] = obj_img_patches
-
-        ### 3D pcs data augmentation by elastic distortion
-        if self.use_aug and self.split == 'train':
-            num_obs = scene_graphs_['tot_obj_pts'].shape[1]
-            pcs_flatten = scene_graphs_['tot_obj_pts'].reshape(-1, 3)
-            pcs_distorted_flatten = self.elastic_distortion(pcs_flatten)
-            scene_graphs_['tot_obj_pts'] = pcs_distorted_flatten.reshape(-1, num_obs, 3)
         
         data_dict['scene_graphs'] = scene_graphs_
-        if self.room_retrieval:
-            data_dict['candata_scan_obj_idxs'] = candata_scan_obj_idxs
-        # pairs info
-        data_dict['e1i_matrix'] = e1i_matrix
-        data_dict['e1j_matrix'] = e1j_matrix
-        data_dict['e2j_matrix'] = e2j_matrix
-        data_dict['f1j_matrix'] = f1j_matrix
-        data_dict['obj_2D_patch_anno_flatten'] = obj_2D_patch_anno_flatten
-        return data_dict
-    
-    def aggretateDataDicts(self, data_dict_list, key, mode):
-        if mode == 'torch_cat':
-            return torch.cat([data[key] for data in data_dict_list])
-        elif mode == 'torch_stack':
-            return torch.stack([data[key] for data in data_dict_list])
-        elif mode == 'np_concat':
-            return np.concatenate([data[key] for data in data_dict_list])
-        elif mode == 'np_stack':
-            return np.stack([data[key] for data in data_dict_list])
-        else:
-            raise NotImplementedError
-    
-    def collateBatchDicts(self, batch_dicts, temporal=False):
-        if temporal:
-            batch = [batch_dict['data_dict_across_time'] for batch_dict in batch_dicts if batch_dict is not None]
-        else:
-            batch = [batch_dict for batch_dict in batch_dicts if batch_dict is not None]
         
-        batch_size = len(batch)
-        data_dict = {}
-        data_dict['batch_size'] = batch_size
-        # frame info 
-        data_dict['scan_ids'] = np.stack([data['scan_id'] for data in batch])
-        data_dict['img_scan_ids'] = np.stack([data['img_scan_id'] for data in batch])
-        data_dict['frame_idxs'] = np.stack([data['frame_idx'] for data in batch])
-        # 2D img info
-        if self.cfg.data.img_encoding.use_feature:
-            patch_features_batch = np.stack([data['patch_features'] for data in batch]) # (B, P_H, P_W, D)
-            data_dict['patch_features'] = torch.from_numpy(patch_features_batch).float() # (B, H, W, C)
-        else:
-            images_batch = np.stack([data['image'] for data in batch])
-            data_dict['images'] = torch.from_numpy(images_batch).float() # (B, H, W, C)
-            if self.cfg.data.img_encoding.record_feature:
-                data_dict['patch_features_paths'] = [data['patch_features_path'] for data in batch]
-        data_dict['obj_2D_patch_anno_flatten_list'] = \
-            [ torch.from_numpy(data['obj_2D_patch_anno_flatten']) for data in batch] # B - [N_P]
-        # 3D scene graph info
-        ## obj info;
-        data_dict['num_objs'] = [data['num_objs'] for data in batch]
-        data_dict['num_objs_across_scenes'] = [data['num_objs_across_scenes'] for data in batch]
-        data_dict['obj_3D_id2idx'] = [data['obj_3D_id2idx'] for data in batch]
-        data_dict['obj_3D_idx2info_list'] = \
-            [data['obj_3D_idx2info'] for data in batch]
-        ## scene graph info
-        data_dict['scene_graphs_list'] = [data['scene_graphs'] for data in batch]
-        
-        if self.room_retrieval:
-            data_dict['candate_scan_obj_idxs_list'] = []
-            for data in batch:
-                candate_scan_obj_idxs = {}
-                for scan_id in data['candata_scan_obj_idxs']:
-                   candate_scan_obj_idxs[scan_id] = \
-                        torch.Tensor(data['candata_scan_obj_idxs'][scan_id]).long()
-                data_dict['candate_scan_obj_idxs_list'].append(candate_scan_obj_idxs)
-        # pairs info
-        data_dict['e1i_matrix_list'] = [ torch.from_numpy(data['e1i_matrix']) for data in batch]  # B - [N_P, N_O]
-        data_dict['e1j_matrix_list'] = [ torch.from_numpy(data['e1j_matrix']) for data in batch]  # B - [N_P, N_P]
-        data_dict['e2j_matrix_list'] = [ torch.from_numpy(data['e2j_matrix']) for data in batch]  # B - [N_P, N_O]
-        data_dict['f1j_matrix_list'] = [ torch.from_numpy(data['f1j_matrix']) for data in batch]  # B - [N_O, N_O]
+        ## obj info
+        assoc_data_dict, assoc_data_dict_temporal = [], []
+        ### get sg obj idx 
+        sg_obj_idxs = {}
+        sg_obj_idxs_tensor = {}
+        sg_obj_idx_start = 0
+        for scan_idx, scan_id in enumerate(scene_graphs_['scene_ids']):
+            scan_id = scan_id[0]
+            sg_obj_idxs[scan_id] = {}
+            objs_count = scene_graphs_['tot_obj_count'][scan_idx]
+            sg_obj_idxs_tensor[scan_id] = torch.from_numpy(
+                 scene_graphs_['obj_ids'][sg_obj_idx_start: sg_obj_idx_start+objs_count]).long()
+            for sg_obj_idx in range(sg_obj_idx_start, sg_obj_idx_start+objs_count):
+                obj_id = scene_graphs_['obj_ids'][sg_obj_idx]
+                sg_obj_idxs[scan_id][obj_id] = sg_obj_idx
+            sg_obj_idx_start += objs_count
+        for data in batch:
+            assoc_data_dict_curr, assoc_data_dict_temporal_curr = \
+                self.generateObjPatchAssociationDataDict(data, candidate_scans, sg_obj_idxs)
+            assoc_data_dict.append(assoc_data_dict_curr)
+            assoc_data_dict_temporal.append(assoc_data_dict_temporal_curr)
+        data_dict['assoc_data_dict'] = assoc_data_dict
+        data_dict['assoc_data_dict_temp'] = assoc_data_dict_temporal
+        data_dict['sg_obj_idxs'] = sg_obj_idxs
+        data_dict['sg_obj_idxs_tensor'] = sg_obj_idxs_tensor
+        data_dict['candidate_scans'] = candidate_scans
         
         if len(batch) > 0:
             return data_dict
@@ -650,30 +697,31 @@ class PatchObjectPairXTASGIDataSet(data.Dataset):
     
     def __getitem__(self, idx):
         data_item = self.data_items[idx]
-        data_dict = self.dataItem2DataDict(data_item)
-        if self.temporal:
-            data_dict_across_time = self.dataItem2DataDict(data_item, temporal=True)
-            data_dict['data_dict_across_time'] = data_dict_across_time
+        data_dict = self.dataItem2DataDict(data_item, self.temporal)
         return data_dict
     
     def collate_fn(self, batch):
-        data_dict = {}
-        data_dict['non_temporal'] = self.collateBatchDicts(batch)
-        if self.temporal:
-            data_dict_across_time = self.collateBatchDicts(batch, temporal=True)
-            data_dict['temporal'] = data_dict_across_time
-        return data_dict
+        return self.collateBatchDicts(batch)
+
         
     def __len__(self):
         return len(self.data_items)
     
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
+    sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
+    from datasets.loaders import get_train_val_data_loader
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week9/tranval_Npair_SGAI/Npair_cfg_SGAI.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week10/tranval_Npair_SGAEI/Npair_cfg_SGAEI.yaml"
     cfg = update_config(config, cfg_file)
-    scan3r_ds = PatchObjectPairXTASGIDataSet(cfg, split='train')
-    print(len(scan3r_ds))
-    batch = [scan3r_ds[0], scan3r_ds[0]]
-    data_batch = scan3r_ds.collate_fn(batch)
-    breakpoint=None
+    train_dataloader, val_dataloader = get_train_val_data_loader(cfg, PatchObjectPairXTAESGIDataSet)
+    
+    pbar = tqdm.tqdm(enumerate(train_dataloader), total=len(train_dataloader))
+    
+    for iteration, data_dict in pbar:
+        pass
+    
+    # scan3r_ds = PatchObjectPairXTAESGIDataSet(cfg, split='train')
+    # print(len(scan3r_ds))
+    # batch = [scan3r_ds[0], scan3r_ds[0]]
+    # data_batch = scan3r_ds.collate_fn(batch)
