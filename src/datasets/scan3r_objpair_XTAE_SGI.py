@@ -207,7 +207,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         self.patch_features = {}
         if self.cfg.data.img_encoding.use_feature:
             for scan_id in self.scan_ids:
-                self.patch_features[scan_id] = scan3r.load_patch_features(
+                self.patch_features[scan_id] = scan3r.load_patch_feature_scans(
                     self.data_root_dir, self.patch_feature_folder, scan_id, self.step)
         self.patch_features_paths = {}
         if self.cfg.data.img_encoding.record_feature:
@@ -217,14 +217,20 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                     self.data_root_dir, self.patch_feature_folder, scan_id, self.step)
                 
         # load 2D gt obj id annotation
-        self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
-        self.obj_2D_annos = {}
-        self.obj_2D_annos_path = {}
-        for scan_id in self.scan_ids:
-            anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
-            anno_2D = common.load_pkl_data(anno_2D_file)
-            anno_2D_step = {frame_idx: anno_2D[frame_idx] for frame_idx in anno_2D if int(frame_idx) % self.step == 0}
-            self.obj_2D_annos[scan_id] = anno_2D_step
+        if self.cfg.data.img_encoding.use_feature:
+            self.obj_2D_patch_anno = {}
+            for scan_id in self.scan_ids:
+                patch_anno_scan_file = osp.join(self.scans_2Dpatch_anno_dir, "{}.pkl".format(scan_id))
+                self.obj_2D_patch_anno[scan_id] = common.load_pkl_data(patch_anno_scan_file)
+        else:
+            self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
+            self.obj_2D_annos = {}
+            self.obj_2D_annos_path = {}
+            for scan_id in self.scan_ids:
+                anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
+                anno_2D = common.load_pkl_data(anno_2D_file)
+                anno_2D_step = {frame_idx: anno_2D[frame_idx] for frame_idx in anno_2D if int(frame_idx) % self.step == 0}
+                self.obj_2D_annos[scan_id] = anno_2D_step
         
         # load 3D scene graph information
         self.load3DSceneGraphs()
@@ -419,16 +425,13 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             
         # 2D data
         frame_idx = data_item['frame_idx']
-        ## 2D gt obj anno
-        obj_2D_anno = self.obj_2D_annos[scan_id][frame_idx]
-        obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
-                        interpolation=cv2.INTER_NEAREST) # type: ignore
-        if self.img_rotate:
-            obj_2D_anno = obj_2D_anno.transpose(1, 0)
-            obj_2D_anno = np.flip(obj_2D_anno, 1)
+
         ## 2D path features
         if self.cfg.data.img_encoding.use_feature:
             patch_features = data_item['patch_features']
+            
+            obj_2D_patch_anno = self.obj_2D_patch_anno[scan_id][frame_idx]
+            obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
         else:
             # img data
             img_path = data_item['img_path']
@@ -439,17 +442,23 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 img = img.transpose(1, 0, 2)
                 img = np.flip(img, 1)
 
+            ## 2D gt obj anno
+            obj_2D_anno = self.obj_2D_annos[scan_id][frame_idx]
+            obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
+                            interpolation=cv2.INTER_NEAREST) # type: ignore
+            if self.img_rotate:
+                obj_2D_anno = obj_2D_anno.transpose(1, 0)
+                obj_2D_anno = np.flip(obj_2D_anno, 1)
             ## 2D data augmentation
             if self.use_aug and self.split == 'train':
                 augments_2D = self.trans_2D(image=img, mask=obj_2D_anno)
                 img = augments_2D['image']
                 obj_2D_anno = augments_2D['mask']
                 img = self.brightness_2D(image=img)['image']
-            
-        # 2D patch anno
-        patch_h, patch_w = self.patch_h, self.patch_w
-        obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.2)
-        obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
+            # 2D patch anno
+            patch_h, patch_w = self.patch_h, self.patch_w
+            obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.2)
+            obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
             
         # frame info
         data_dict['scan_id'] = scan_id

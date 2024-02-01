@@ -27,7 +27,7 @@ from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 from datasets.loaders import get_train_val_data_loader
 from src.datasets.scan3r_objpair_XTAE_SGI import PatchObjectPairXTAESGIDataSet
 # utils
-from utils import common, scan3r
+from utils import common
 
 
 class Trainer(EpochBasedTrainer):
@@ -82,13 +82,16 @@ class Trainer(EpochBasedTrainer):
         self.registerVisuliser(cfg)
         
     def registerPatchObjectAlignerFromCfg(self, cfg):
-        # load backbone
-        backbone_cfg_file = cfg.model.backbone.cfg_file
-        # ugly hack to load pretrained model, maybe there is a better way
-        backbone_cfg = Config.fromfile(backbone_cfg_file)
-        backbone_pretrained_file = cfg.model.backbone.pretrained
-        backbone_cfg.model['backbone']['pretrained'] = backbone_pretrained_file
-        backbone = build_backbone(backbone_cfg.model['backbone'])
+        if not self.cfg.data.img_encoding.use_feature:
+            
+            backbone_cfg_file = cfg.model.backbone.cfg_file
+            # ugly hack to load pretrained model, maybe there is a better way
+            backbone_cfg = Config.fromfile(backbone_cfg_file)
+            backbone_pretrained_file = cfg.model.backbone.pretrained
+            backbone_cfg.model['backbone']['pretrained'] = backbone_pretrained_file
+            backbone = build_backbone(backbone_cfg.model['backbone'])
+        else:
+            backbone = None
         
         # get patch object aligner
         ## 2Dbackbone
@@ -157,7 +160,7 @@ class Trainer(EpochBasedTrainer):
     def freezeParams(self, cfg):
         # freeze backbone params if required
         self.free_backbone_epoch = cfg.train.optim.free_backbone_epoch
-        if (self.free_backbone_epoch > 0):
+        if (self.free_backbone_epoch > 0) and not self.cfg.data.img_encoding.use_feature:
             for param in self.model.backbone.parameters():
                 param.requires_grad = False
         self.free_sgaligner_epoch = cfg.train.optim.free_sgaligner_epoch
@@ -166,8 +169,9 @@ class Trainer(EpochBasedTrainer):
                 param.requires_grad = False
             
     def defreezeBackboneParams(self):
-        for param in self.model.backbone.parameters():
-            param.requires_grad = True
+        if not self.cfg.data.img_encoding.use_feature:
+            for param in self.model.backbone.parameters():
+                param.requires_grad = True
             # # update optimiser
             # if id(param) not in self.params_register_ids:
             #     self.params_register.append( id(param) )

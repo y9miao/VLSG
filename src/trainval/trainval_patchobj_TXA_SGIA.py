@@ -82,12 +82,15 @@ class Trainer(EpochBasedTrainer):
         
     def registerPatchObjectAlignerFromCfg(self, cfg):
         # load backbone
+        
+
         backbone_cfg_file = cfg.model.backbone.cfg_file
         # ugly hack to load pretrained model, maybe there is a better way
         backbone_cfg = Config.fromfile(backbone_cfg_file)
         backbone_pretrained_file = cfg.model.backbone.pretrained
         backbone_cfg.model['backbone']['pretrained'] = backbone_pretrained_file
         backbone = build_backbone(backbone_cfg.model['backbone'])
+
         
         # get patch object aligner
         ## 2Dbackbone

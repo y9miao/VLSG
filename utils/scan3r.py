@@ -106,25 +106,16 @@ def load_depth_paths(data_dir, scan_id, skip=None):
         img_paths[frame_idx] = img_path
     return img_paths
 
-def load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip=None):
-    features_path = {}
+def load_patch_feature_scans(data_root_dir, feature_folder, scan_id, skip=None):
     frame_idxs = load_frame_idxs(osp.join(data_root_dir, "scenes"), scan_id, skip)
-    features_scan_folder = osp.join(data_root_dir, 'files', feature_folder, scan_id)
+    features_file = osp.join(osp.join(data_root_dir, "files"), feature_folder, scan_id+".pkl")
+    with open(features_file, 'rb') as handle:
+        features_scan = pickle.load(handle)
+    features_scan_step = {}
     for frame_idx in frame_idxs:
-        features_frame_file = osp.join(features_scan_folder, "frame-{}.npy".format(frame_idx))
-        features_path[frame_idx] = features_frame_file
-    return features_path
+        features_scan_step[frame_idx] = features_scan[frame_idx]
+    return features_scan_step
 
-def load_patch_features(data_root_dir, feature_folder, scan_id, skip=None):
-    features_path = load_patch_feature_paths(data_root_dir, feature_folder, scan_id, skip)
-    features = {}
-    for frame_idx, feature_path in features_path.items():
-        features[frame_idx] = np.load(feature_path)
-    return features
-def load_patch_features_scan(data_files_dir, feature_folder, scan_id):
-    features_file_path = osp.join(data_files_dir, feature_folder, scan_id+".pkl")
-    features = load_pkl_data(features_file_path)
-    return features
 def load_pkl_data(filename):
     with open(filename, 'rb') as handle:
         data_dict = pickle.load(handle)
