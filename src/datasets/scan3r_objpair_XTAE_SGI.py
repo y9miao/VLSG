@@ -255,6 +255,12 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             magnitude=cfg.train.data_aug.pcs.magnitude,
         )
             
+        # fix candidate scan for val&test split for room retrieval
+        if self.split == 'val' or self.split == 'test':
+            self.candidate_scans = {}
+            for scan_id in self.scan_ids:
+                self.candidate_scans[scan_id] = self.sampleCandidateScenesForEachScan(scan_id, self.num_scenes)
+            
         # generate data items given multiple scans
         self.data_items = self.generateDataItems()
 
@@ -355,7 +361,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
             for scan_id in scan_ids:
                 # first get scans in the batch
-                candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] not in ref_scans]
+                candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] != self.scans2refscans[scan_id]]
                 candidate_scan_pool = list(set(candidate_scan_pool))
                 num_scans_to_be_sampled_curr = num_scenes - len(candidate_scan_pool)
                 candidate_scans_curr = candidate_scan_pool + random.sample(additional_candidates, num_scans_to_be_sampled_curr)
@@ -412,8 +418,15 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             data_dict['scan_id_temporal'] = self.sampleScanCrossTime(scan_id)
             
         # 2D data
-        ## 2D path features
         frame_idx = data_item['frame_idx']
+        ## 2D gt obj anno
+        obj_2D_anno = self.obj_2D_annos[scan_id][frame_idx]
+        obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
+                        interpolation=cv2.INTER_NEAREST) # type: ignore
+        if self.img_rotate:
+            obj_2D_anno = obj_2D_anno.transpose(1, 0)
+            obj_2D_anno = np.flip(obj_2D_anno, 1)
+        ## 2D path features
         if self.cfg.data.img_encoding.use_feature:
             patch_features = data_item['patch_features']
         else:
@@ -425,22 +438,13 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             if self.img_rotate:
                 img = img.transpose(1, 0, 2)
                 img = np.flip(img, 1)
-        ## 2D gt obj anno
-        # obj_2D_anno_path = self.obj_2D_annos_path[scan_id]
-        # obj_2D_anno_frames = common.load_pkl_data(obj_2D_anno_path)
-        # obj_2D_anno = obj_2D_anno_frames[frame_idx]
-        obj_2D_anno = self.obj_2D_annos[scan_id][frame_idx]
-        obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
-                        interpolation=cv2.INTER_NEAREST) # type: ignore
-        if self.img_rotate:
-            obj_2D_anno = obj_2D_anno.transpose(1, 0)
-            obj_2D_anno = np.flip(obj_2D_anno, 1)
-        ## 2D data augmentation
-        if self.use_aug and self.split == 'train':
-            augments_2D = self.trans_2D(image=img, mask=obj_2D_anno)
-            img = augments_2D['image']
-            obj_2D_anno = augments_2D['mask']
-            img = self.brightness_2D(image=img)['image']
+
+            ## 2D data augmentation
+            if self.use_aug and self.split == 'train':
+                augments_2D = self.trans_2D(image=img, mask=obj_2D_anno)
+                img = augments_2D['image']
+                obj_2D_anno = augments_2D['mask']
+                img = self.brightness_2D(image=img)['image']
             
         # 2D patch anno
         patch_h, patch_w = self.patch_h, self.patch_w
@@ -571,7 +575,14 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         
         # sample candidate scenes for each scan
         if self.use_cross_scene:
-            candidate_scans, union_scans = self.sampleCandidateScenesForScans(scans_batch, self.num_scenes)
+            if self.split == 'train':
+                candidate_scans, union_scans = self.sampleCandidateScenesForScans(scans_batch, self.num_scenes)
+            else:
+                candidate_scans = {}
+                for scan_id in scans_batch:
+                    candidate_scans[scan_id] = self.candidate_scans[scan_id]
+                union_scans = list(set(scans_batch + [scan for scan_list in candidate_scans.values() for scan in scan_list]))
+            # candidate_scans, union_scans = self.sampleCandidateScenesForScans(scans_batch, self.num_scenes)
         else:
             candidate_scans, union_scans = [], scans_batch
         
@@ -716,12 +727,13 @@ if __name__ == '__main__':
     cfg = update_config(config, cfg_file)
     train_dataloader, val_dataloader = get_train_val_data_loader(cfg, PatchObjectPairXTAESGIDataSet)
     
-    pbar = tqdm.tqdm(enumerate(train_dataloader), total=len(train_dataloader))
+    pbar = tqdm.tqdm(enumerate(val_dataloader), total=len(train_dataloader))
     
     for iteration, data_dict in pbar:
         pass
     
-    # scan3r_ds = PatchObjectPairXTAESGIDataSet(cfg, split='train')
-    # print(len(scan3r_ds))
-    # batch = [scan3r_ds[0], scan3r_ds[0]]
-    # data_batch = scan3r_ds.collate_fn(batch)
+    # scan3r_ds = PatchObjectPairXTAESGIDataSet(cfg, split='val')
+    # batch_size = 16
+    # for batch_i in  tqdm.tqdm(range(int(len(scan3r_ds)/batch_size))):
+    #     batch = [scan3r_ds[i] for i in range(batch_i*batch_size, (batch_i+1)*batch_size)]
+    #     data_batch = scan3r_ds.collate_fn(batch)
