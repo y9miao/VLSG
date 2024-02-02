@@ -137,10 +137,10 @@ class ICLLossBothSidesSumOutLog(nn.Module):
         else:
             loss_dict['loss'] = (loss_batch_NT.mean() + loss_batch_T.mean()) / 2 if loss_batch_NT is not None \
                 else torch.tensor([0.]).to(loss_batch_NT.device)
-            # loss_dict['loss_NT'] = loss_batch_NT.mean() if loss_batch_NT is not None \
-            #     else torch.tensor([0.]).to(loss_batch_NT.device)
-            # loss_dict['loss_T'] = loss_batch_T.mean() if loss_batch_T is not None \
-            #     else torch.tensor([0.]).to(loss_batch_T.device)
+            loss_dict['loss_NT'] = loss_batch_NT.mean() if loss_batch_NT is not None \
+                else torch.tensor([0.]).to(loss_batch_NT.device)
+            loss_dict['loss_T'] = loss_batch_T.mean() if loss_batch_T is not None \
+                else torch.tensor([0.]).to(loss_batch_T.device)
             loss_dict['matched_success_ratio_NT'] = matched_success_batch_NT.mean() if matched_success_batch_NT is not None \
                 else torch.tensor([0.]).to(loss_batch_NT.device)
             loss_dict['matched_success_ratio_T'] = matched_success_batch_T.mean() if matched_success_batch_T is not None \

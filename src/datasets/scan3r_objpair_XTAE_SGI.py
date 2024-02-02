@@ -431,7 +431,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             patch_features = data_item['patch_features']
             
             obj_2D_patch_anno = self.obj_2D_patch_anno[scan_id][frame_idx]
-            obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
+            if self.img_rotate:
+                obj_2D_patch_anno = obj_2D_patch_anno.transpose(1, 0)
+                obj_2D_patch_anno = np.flip(obj_2D_patch_anno, 1)
+            obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1) 
         else:
             # img data
             img_path = data_item['img_path']
@@ -474,15 +477,18 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
     
     def generateObjPatchAssociationDataDict(self, data_item, candidate_scans, sg_obj_idxs):
         scan_id = data_item['scan_id']
-        candidate_scans = candidate_scans[scan_id]
+        if candidate_scans is None:
+            candidate_scans_cur = []
+        else:
+            candidate_scans_cur = candidate_scans[scan_id]
         gt_2D_anno_flat = data_item['obj_2D_patch_anno_flatten']
-        assoc_data_dict = self.generateObjPatchAssociationScan(scan_id, candidate_scans, gt_2D_anno_flat, sg_obj_idxs)
+        assoc_data_dict = self.generateObjPatchAssociationScan(scan_id, candidate_scans_cur, gt_2D_anno_flat, sg_obj_idxs)
         
         # temporal 
         if self.temporal:
             scan_id_temporal = data_item['scan_id_temporal']
             assoc_data_dict_temporal = self.generateObjPatchAssociationScan(
-                scan_id_temporal, candidate_scans, gt_2D_anno_flat, sg_obj_idxs)
+                scan_id_temporal, candidate_scans_cur, gt_2D_anno_flat, sg_obj_idxs)
             return assoc_data_dict, assoc_data_dict_temporal
         else:
             return assoc_data_dict, None
@@ -593,7 +599,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 union_scans = list(set(scans_batch + [scan for scan_list in candidate_scans.values() for scan in scan_list]))
             # candidate_scans, union_scans = self.sampleCandidateScenesForScans(scans_batch, self.num_scenes)
         else:
-            candidate_scans, union_scans = [], scans_batch
+            candidate_scans, union_scans = None, scans_batch
         
         batch_size = len(batch)
         data_dict = {}
@@ -736,7 +742,7 @@ if __name__ == '__main__':
     cfg = update_config(config, cfg_file)
     train_dataloader, val_dataloader = get_train_val_data_loader(cfg, PatchObjectPairXTAESGIDataSet)
     
-    pbar = tqdm.tqdm(enumerate(val_dataloader), total=len(train_dataloader))
+    pbar = tqdm.tqdm(enumerate(train_dataloader), total=len(train_dataloader))
     
     for iteration, data_dict in pbar:
         pass
