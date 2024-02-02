@@ -129,7 +129,8 @@ class Trainer(EpochBasedTrainer):
                                 cfg.train.loss.use_temporal)
         
         # load pretrained sgaligner if required
-        if cfg.sgaligner.use_pretrained and os.path.isfile(cfg.sgaligner.pretrained):
+        if cfg.sgaligner.use_pretrained:
+            assert os.path.isfile(cfg.sgaligner.pretrained), 'Pretrained sgaligner not found.'
             sgaligner_dict = torch.load(cfg.sgaligner.pretrained, map_location=torch.device('cpu'))
             self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=False)
         
