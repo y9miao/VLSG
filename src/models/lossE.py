@@ -211,8 +211,8 @@ class ValidationRoomRetrievalLoss(nn.Module):
                 retrieval_result['R@5{}'.format(key)] += 1
     
         retrieval_result['R@1{}'.format(key)]  =  retrieval_result['R@1{}'.format(key)] * 1.0 / total
-        retrieval_result['R@1{}'.format(key)]  =  retrieval_result['R@1{}'.format(key)] * 1.0 / total
-        retrieval_result['R@1{}'.format(key)]  =  retrieval_result['R@1{}'.format(key)] * 1.0 / total
+        retrieval_result['R@3{}'.format(key)]  =  retrieval_result['R@3{}'.format(key)] * 1.0 / total
+        retrieval_result['R@5{}'.format(key)]  =  retrieval_result['R@5{}'.format(key)] * 1.0 / total
     
         return retrieval_result
             
