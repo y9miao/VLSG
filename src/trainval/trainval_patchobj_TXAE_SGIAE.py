@@ -131,7 +131,7 @@ class Trainer(EpochBasedTrainer):
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained and os.path.isfile(cfg.sgaligner.pretrained):
             sgaligner_dict = torch.load(cfg.sgaligner.pretrained, map_location=torch.device('cpu'))
-            self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=True)
+            self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=False)
         
         # load snapshot if required
         if cfg.other.use_resume and os.path.isfile(cfg.other.resume):
