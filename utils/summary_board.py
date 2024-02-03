@@ -85,6 +85,17 @@ class SummaryBoard:
         summary = ', '.join(items)
         return summary
 
+    def tostringlist(self, names=None):
+        if names is None:
+            names = self.meter_names
+        items = []
+        for name in names:
+            value = self.meter_dict[name].mean()
+            fmt = get_print_format(value)
+            format_string = '{}: {:' + fmt + '}'
+            items.append(format_string.format(name, value))
+        return items
+
     def summary(self, names=None):
         if names is None:
             names = self.meter_names

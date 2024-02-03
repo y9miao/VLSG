@@ -50,4 +50,16 @@ def get_val_dataloader(cfg, Dataset = PatchObjectPairDataSet):
                                                 pin_memory=True, 
                                                 drop_last=True)
     return val_dataset, val_dataloader
+
+def get_test_dataloader(cfg, Dataset = PatchObjectPairDataSet):
+    test_dataset = Dataset(cfg, split='test')
+    test_dataloader = torch_util.build_dataloader(test_dataset, 
+                                                  batch_size=cfg.val.batch_size, 
+                                                  num_workers=cfg.val.num_workers, 
+                                                  shuffle=False,
+                                                  collate_fn=test_dataset.collate_fn, 
+                                                  pin_memory=True, 
+                                                  drop_last=True)
+    return test_dataset, test_dataloader
+
     

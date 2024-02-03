@@ -113,8 +113,24 @@ class Scan3rLipLocDataset(data.Dataset):
             
         # generate data items given multiple scans
         self.data_items = self.generateDataItems()
-            
+
+        # fix candidate scan for val&test split for room retrieval
+        self.num_scenes = cfg.data.cross_scene.num_scenes
+        if self.split == 'val' or self.split == 'test':
+            self.candidate_scans = {}
+            for scan_id in self.scan_ids:
+                self.candidate_scans[scan_id] = self.sampleCandidateScenesForEachScan(scan_id, self.num_scenes)
         break_point = None
+        
+    def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
+        candidate_scans = []
+        scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
+        # sample other scenes
+        for scan in self.all_scans_split:
+            if scan not in scans_same_scene:
+                candidate_scans.append(scan)
+        sampled_scans = random.sample(candidate_scans, num_scenes)
+        return sampled_scans
             
     def loadScansRangeImage(self):
         
@@ -171,16 +187,7 @@ class Scan3rLipLocDataset(data.Dataset):
             proj_range, proj_color = scan3r.createRangeImage(
                 pcs, colors, pcs_center, fov_up, fov_down, range_W, range_H, [range_min, range_max])
             return proj_range, proj_color
-    
-    def sampleCrossScenes(self, scan_id, num_scenes):
-        candidate_scans = []
-        scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
-        # sample other scenes
-        for scan in self.all_scans_split:
-            if scan not in scans_same_scene:
-                candidate_scans.append(scan)
-        sampled_scans = random.sample(candidate_scans, num_scenes)
-        return sampled_scans
+
     
     def sampleCrossTime(self, scan_id):
         candidate_scans = []
@@ -237,7 +244,7 @@ class Scan3rLipLocDataset(data.Dataset):
         
         if self.split != 'train':
             # sample across scenes for room retrieval
-            candidate_scans = self.sampleCrossScenes(scan_id, self.cfg.data.cross_scene.num_scenes)
+            candidate_scans = self.candidate_scans[scan_id]
             curr_scan = scan_id
             temporal_scan = self.sampleCrossTime(scan_id)
             
@@ -311,7 +318,7 @@ if __name__ == '__main__':
     cfg = update_config(config, cfg_file, ensure_dir=False)
     
     # dataset
-    dataset = Scan3rLipLocDataset(cfg, 'train')
+    dataset = Scan3rLipLocDataset(cfg, 'test')
     
     batch = dataset.collate_fn([dataset[0], dataset[1]])
     

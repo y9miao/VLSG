@@ -129,10 +129,11 @@ class Scan3rCLIPGenerator():
 
 def main():
     from configs import config, update_config
+    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/img_features/CLIP_features/clip_generator_cfg.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
     
-    scan3r_anyloc_vlad_generator = Scan3rCLIPGenerator(cfg, 'train')
+    scan3r_anyloc_vlad_generator = Scan3rCLIPGenerator(cfg, 'test')
     scan3r_anyloc_vlad_generator.register_model()
     scan3r_anyloc_vlad_generator.generateFeatures()
     

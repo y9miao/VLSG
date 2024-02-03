@@ -1,0 +1,123 @@
+# LOG: This experiement is to test the existing method LidarClip for room retrieval task
+
+# for Scan3R data
+data :
+  name            : Scan3R
+  root_dir        : '' # to be read in code from env varia  
+  rescan: True
+  temporal: True
+  resplit: True
+  img:
+    img_step: 1
+    img_size: 224
+  pointcloud:
+    save_range: False
+    use_saved_range: True
+    use_mesh: True
+    range_min: 0.2
+    range_max: 8.0
+    fov_up: 45.0
+    fov_down: -45.0
+    range_W: 360
+    range_H: 90
+    range_name: "Features3D/LidarLoc/Meshrange_360_90"
+  cross_scene:
+    use_cross_scene: True
+    num_scenes: 9 # number of scenes 
+    num_negative_samples: -1 # number of negative samples 
+
+# for sgaligner
+sgaligner:
+  label_file_name : labels.instances.annotated.v2.ply
+  pred_subfix     : inseg.ply
+
+  seed: 42
+  num_workers : 4
+  model_name    : 'sgaligner'
+  modules       : ['point', 'gat', 'rel', 'attr']
+  use_predicted : False
+  registration  : False
+  scan_type     : 'scan'
+
+  preprocess :
+    pc_resolutions      : [64, 128, 256, 512]
+    subscenes_per_scene : 1
+    filter_segment_size : 512
+    min_obj_points      : 50
+    anchor_type_name    : '' 
+
+  model :
+    rel_dim             : 9
+    attr_dim            : 164
+    alignment_thresh    : 0.4
+
+  train :
+    batch_size          : 2
+
+  val :
+    batch_size          : 4
+    overlap_low         : 0.0
+    overlap_high        : 0.0
+    data_mode: orig
+
+# LipLoc model
+model_name    : 'LipLoc'
+
+# for 2D-3D match
+model:
+  #LipLoc
+  backbone3D: 
+    # to be read in code from env varia, relative to VLSG_SPACE
+    pretrained: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/LipLoc/best.pth"
+    dim_3d: 768
+  other:
+    drop: 0.2
+
+# implemetation
+output_dir: "" # to be read in code from env varia
+mode: "train"
+# for training
+train:
+  batch_size: 32
+  num_workers: 8
+  freeze_backbone: True
+  use_pretrained: False
+  log_steps: 20
+  snapshot_steps: 1
+  optim:
+    lr: 0.0011
+    scheduler: "step"
+    lr_decay: 0.95
+    lr_decay_steps: 10500
+    lr_min: 0.0005
+    T_max: 1000
+    T_mult: 1
+    weight_decay: 0.000001
+    max_epoch: 10500
+    free_backbone_epoch: 10500 # freeze backbone until certain epochs
+    grad_acc_steps: 1
+  loss:
+    use_temporal: True
+    loss_type: "cos"
+    alpha: 0.5
+    temperature: 0.1
+    margin: 0.5
+  # for vis
+  use_vis: False
+  vis_epoch_steps: 100
+# for validation
+val:
+  batch_size: 16
+  num_workers: 8
+  pretrained: "./"
+  room_retrieval:
+    epsilon_th: 0.8
+    method_name: "LipLocE9_S1"
+other:
+  use_resume: True
+  # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
+  resume_folder: "" # to be read in code from env varia
+  resume: "./epoch-9.pth.tar" 
+# others
+seed: 42
+

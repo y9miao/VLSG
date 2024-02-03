@@ -349,34 +349,47 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         sampled_scans = random.sample(candidate_scans, num_scenes)
         return sampled_scans
     
+    # def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
+    #     candidate_scans = {}
+        
+    #     # ref scans of input scans
+    #     ref_scans = [self.scans2refscans[scan_id] for scan_id in scan_ids]
+    #     ref_scans = list(set(ref_scans))
+    #     num_ref_scans = len(ref_scans)
+        
+    #     if num_ref_scans > num_scenes: # if enough ref scans, no need to sample other scenes
+    #         for scan_id in scan_ids:
+    #             candidate_scan_pool = [scan for scan in scan_ids if scan not in self.refscans2scans[self.scans2refscans[scan_id]]]
+    #             candidate_scan_pool = list(set(candidate_scan_pool))
+    #             candidate_scans[scan_id] = random.sample(candidate_scan_pool, num_scenes)
+    #     else: # if not enough ref scans, sample other additional scenes
+    #         num_scans_to_be_sampled = num_scenes - num_ref_scans + 1
+    #         additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
+    #         additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
+    #         for scan_id in scan_ids:
+    #             # first get scans in the batch
+    #             candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] != self.scans2refscans[scan_id]]
+    #             candidate_scan_pool = list(set(candidate_scan_pool))
+    #             num_scans_to_be_sampled_curr = num_scenes - len(candidate_scan_pool)
+    #             candidate_scans_curr = candidate_scan_pool + random.sample(additional_candidates, num_scans_to_be_sampled_curr)
+    #             candidate_scans[scan_id] = list(set(candidate_scans_curr))
+    #     candidate_scans_all = list(set([scan for scan_list in candidate_scans.values() for scan in scan_list]))
+    #     union_scans = list(set(scan_ids + candidate_scans_all))
+    #     return candidate_scans, union_scans
+    
     def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
         candidate_scans = {}
-        
         # ref scans of input scans
         ref_scans = [self.scans2refscans[scan_id] for scan_id in scan_ids]
         ref_scans = list(set(ref_scans))
         num_ref_scans = len(ref_scans)
-        
-        if num_ref_scans > num_scenes: # if enough ref scans, no need to sample other scenes
-            for scan_id in scan_ids:
-                candidate_scan_pool = [scan for scan in scan_ids if scan not in self.refscans2scans[self.scans2refscans[scan_id]]]
-                candidate_scan_pool = list(set(candidate_scan_pool))
-                candidate_scans[scan_id] = random.sample(candidate_scan_pool, num_scenes)
-        else: # if not enough ref scans, sample other additional scenes
-            num_scans_to_be_sampled = num_scenes - num_ref_scans + 1
-            additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
-            additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
-            for scan_id in scan_ids:
-                # first get scans in the batch
-                candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] != self.scans2refscans[scan_id]]
-                candidate_scan_pool = list(set(candidate_scan_pool))
-                num_scans_to_be_sampled_curr = num_scenes - len(candidate_scan_pool)
-                candidate_scans_curr = candidate_scan_pool + random.sample(additional_candidates, num_scans_to_be_sampled_curr)
-                candidate_scans[scan_id] = list(set(candidate_scans_curr))
+        num_scans_to_be_sampled = num_scenes
+        additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
+        additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
+        for scan_id in scan_ids:
+            candidate_scans[scan_id] = list(set(additional_candidates))      
         candidate_scans_all = list(set([scan for scan_list in candidate_scans.values() for scan in scan_list]))
         union_scans = list(set(scan_ids + candidate_scans_all))
-        
-
         return candidate_scans, union_scans
     
     # sample cross time for each data item

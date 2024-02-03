@@ -138,6 +138,9 @@ class Trainer(EpochBasedTrainer):
         if cfg.sgaligner.use_pretrained:
             assert os.path.isfile(cfg.sgaligner.pretrained), 'Pretrained sgaligner not found.'
             sgaligner_dict = torch.load(cfg.sgaligner.pretrained, map_location=torch.device('cpu'))
+            sgaligner_model = sgaligner_dict['model']
+            # remove weights of the last layer
+            sgaligner_model.pop('fusion.weight')
             self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=False)
         
         # load snapshot if required
