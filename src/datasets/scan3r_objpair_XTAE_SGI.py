@@ -13,7 +13,8 @@ import cv2
 import sys
 import scipy
 import tqdm
-
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
 from yaml import scan
 
 sys.path.append('..')
