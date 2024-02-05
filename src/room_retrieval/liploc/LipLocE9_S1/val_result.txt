@@ -1,5 +1,6 @@
-time_T_S: 0.017735
-time_NT_S: 0.013980
+img_forward_time: 0.002714
+time_T_S: 0.000067
+time_NT_S: 0.000053
 R@1_T_S: 0.240234
 R@3_T_S: 0.553955
 R@5_T_S: 0.718262

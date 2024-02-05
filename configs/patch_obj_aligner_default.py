@@ -165,15 +165,15 @@ def update_config_room_retrival(cfg, filename, ensure_dir=True):
     RESUME_DIR = os.getenv('RESUME_DIR')
     # data root
     cfg.data.root_dir = Scan3R_ROOT_DIR
-    # backbone files
-    cfg.model.backbone.cfg_file = osp.join(VLSG_SPACE, cfg.model.backbone.cfg_file)
-    cfg.model.backbone.pretrained = osp.join(VLSG_SPACE, cfg.model.backbone.pretrained)
-    # output dir
-    cfg.output_dir = ROOM_RETRIEVAL_OUT_DIR
-    # resume dir 
-    cfg.other.resume = osp.join(RESUME_DIR, cfg.other.resume)
     
     if ensure_dir:
+        # backbone files
+        cfg.model.backbone.cfg_file = osp.join(VLSG_SPACE, cfg.model.backbone.cfg_file)
+        cfg.model.backbone.pretrained = osp.join(VLSG_SPACE, cfg.model.backbone.pretrained)
+        # output dir
+        cfg.output_dir = ROOM_RETRIEVAL_OUT_DIR
+        # resume dir 
+        cfg.other.resume = osp.join(RESUME_DIR, cfg.other.resume)
         common.ensure_dir(osp.join(cfg.output_dir, cfg.val.room_retrieval.method_name))
         cfg.log_dir = osp.join(cfg.output_dir, cfg.val.room_retrieval.method_name, 'logs')
         common.ensure_dir(cfg.log_dir)

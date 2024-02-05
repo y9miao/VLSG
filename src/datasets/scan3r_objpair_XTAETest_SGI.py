@@ -1,5 +1,6 @@
 import os
 import os.path as osp
+from re import T
 from weakref import ref
 from attr import assoc
 import comm
@@ -152,7 +153,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         else:
             self.patch_h = self.image_patch_h
             self.patch_w = self.image_patch_w
-        self.step = self.cfg.data.img.img_step
+        self.step = self.cfg.data.img.img_step if self.split == 'train' else 1
         self.num_patch = self.image_patch_w * self.image_patch_h
         self.patch_anno_folder_name = "patch_anno_{}_{}".format(self.image_patch_w, self.image_patch_h)
         self.scans_2Dpatch_anno_dir = osp.join(self.scans_files_dir, "patch_anno", self.patch_anno_folder_name)
@@ -174,7 +175,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         
         # scans info
         self.temporal = cfg.data.temporal
-        self.rescan = cfg.data.rescan
+        self.rescan = cfg.data.rescan if self.split == 'train' else True
         scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
         all_scan_data = common.load_json(scan_info_file)
         self.refscans2scans = {}
@@ -349,33 +350,47 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         sampled_scans = random.sample(candidate_scans, num_scenes)
         return sampled_scans
     
+    # def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
+    #     candidate_scans = {}
+        
+    #     # ref scans of input scans
+    #     ref_scans = [self.scans2refscans[scan_id] for scan_id in scan_ids]
+    #     ref_scans = list(set(ref_scans))
+    #     num_ref_scans = len(ref_scans)
+        
+    #     if num_ref_scans > num_scenes: # if enough ref scans, no need to sample other scenes
+    #         for scan_id in scan_ids:
+    #             candidate_scan_pool = [scan for scan in scan_ids if scan not in self.refscans2scans[self.scans2refscans[scan_id]]]
+    #             candidate_scan_pool = list(set(candidate_scan_pool))
+    #             candidate_scans[scan_id] = random.sample(candidate_scan_pool, num_scenes)
+    #     else: # if not enough ref scans, sample other additional scenes
+    #         num_scans_to_be_sampled = num_scenes - num_ref_scans + 1
+    #         additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
+    #         additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
+    #         for scan_id in scan_ids:
+    #             # first get scans in the batch
+    #             candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] != self.scans2refscans[scan_id]]
+    #             candidate_scan_pool = list(set(candidate_scan_pool))
+    #             num_scans_to_be_sampled_curr = num_scenes - len(candidate_scan_pool)
+    #             candidate_scans_curr = candidate_scan_pool + random.sample(additional_candidates, num_scans_to_be_sampled_curr)
+    #             candidate_scans[scan_id] = list(set(candidate_scans_curr))
+    #     candidate_scans_all = list(set([scan for scan_list in candidate_scans.values() for scan in scan_list]))
+    #     union_scans = list(set(scan_ids + candidate_scans_all))
+    #     return candidate_scans, union_scans
+    
     def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
         candidate_scans = {}
-        
         # ref scans of input scans
         ref_scans = [self.scans2refscans[scan_id] for scan_id in scan_ids]
         ref_scans = list(set(ref_scans))
         num_ref_scans = len(ref_scans)
-        
-        if num_ref_scans > num_scenes: # if enough ref scans, no need to sample other scenes
-            for scan_id in scan_ids:
-                candidate_scan_pool = [scan for scan in scan_ids if scan not in self.refscans2scans[self.scans2refscans[scan_id]]]
-                candidate_scan_pool = list(set(candidate_scan_pool))
-                candidate_scans[scan_id] = random.sample(candidate_scan_pool, num_scenes)
-        else: # if not enough ref scans, sample other additional scenes
-            num_scans_to_be_sampled = num_scenes - num_ref_scans + 1
-            additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
-            additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
-            for scan_id in scan_ids:
-                # first get scans in the batch
-                candidate_scan_pool = [scan for scan in scan_ids if self.scans2refscans[scan] != self.scans2refscans[scan_id]]
-                candidate_scan_pool = list(set(candidate_scan_pool))
-                num_scans_to_be_sampled_curr = num_scenes - len(candidate_scan_pool)
-                candidate_scans_curr = candidate_scan_pool + random.sample(additional_candidates, num_scans_to_be_sampled_curr)
-                candidate_scans[scan_id] = list(set(candidate_scans_curr))
+        num_scans_to_be_sampled = num_scenes
+        additional_candidate_sample_pool = [scan for scan in self.all_scans_split if self.scans2refscans[scan] not in ref_scans]
+        additional_candidates = random.sample(additional_candidate_sample_pool, num_scans_to_be_sampled)
+        for scan_id in scan_ids:
+            candidate_scans[scan_id] = list(set(additional_candidates))      
         candidate_scans_all = list(set([scan for scan_list in candidate_scans.values() for scan in scan_list]))
         union_scans = list(set(scan_ids + candidate_scans_all))
-        
         return candidate_scans, union_scans
     
     # sample cross time for each data item
@@ -498,7 +513,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         obj_3D_id2idx_cur_scan = {} # for objs in current scene
         scans_sg_obj_idxs = [] # for current scene and other scenes
         candata_scan_obj_idxs = {}
-        objs_sem_ids = []
         ## cur scan objs
         objs_ids_cur_scan = self.scene_graphs[scan_id]['obj_ids']
         idx = 0
@@ -509,8 +523,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             if scan_id not in candata_scan_obj_idxs:
                 candata_scan_obj_idxs[scan_id] = []
             candata_scan_obj_idxs[scan_id].append(idx)
-            sim_id = self.obj_3D_anno[scan_id][obj_id][2]
-            objs_sem_ids.append(sim_id)
             idx += 1 
         
         ## other scans objs
@@ -522,15 +534,12 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 if cand_scan_id not in candata_scan_obj_idxs:
                     candata_scan_obj_idxs[cand_scan_id] = []
                 candata_scan_obj_idxs[cand_scan_id].append(idx)
-                sim_id = self.obj_3D_anno[cand_scan_id][obj_id][2]
-                objs_sem_ids.append(sim_id)
                 idx += 1
             candata_scan_obj_idxs[cand_scan_id] = torch.Tensor(
                 candata_scan_obj_idxs[cand_scan_id]).long()
         candata_scan_obj_idxs[scan_id] = torch.Tensor(candata_scan_obj_idxs[scan_id]).long()
         ## to numpy
         scans_sg_obj_idxs = np.array(scans_sg_obj_idxs, dtype=np.int32)
-        objs_sem_ids = np.array(objs_sem_ids, dtype=np.int32)
         ## to torch
         scans_sg_obj_idxs = torch.from_numpy(scans_sg_obj_idxs).long()
                 
@@ -545,15 +554,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             patch_h_shift = patch_h_i*self.patch_w
             for patch_w_j in range(self.patch_w):
                 obj_id = gt_2D_anno_flat[patch_h_shift + patch_w_j]
-                if obj_id != self.undefined:
-                    if (obj_id in obj_3D_id2idx_cur_scan):
-                        # mark 2D-3D patch-object pairs
-                        obj_idx = obj_3D_id2idx_cur_scan[obj_id]
-                        e1i_matrix[patch_h_shift+patch_w_j, obj_idx] = 1 
-                        # mark 2D-3D patch-object unpairs
-                        sem_id = self.obj_3D_anno[scan_id][obj_id][2]
-                        e2j_matrix[patch_h_shift+patch_w_j, objs_sem_ids == sem_id] = 0
-                
+                if obj_id != self.undefined and (obj_id in obj_3D_id2idx_cur_scan):
+                    obj_idx = obj_3D_id2idx_cur_scan[obj_id]
+                    e1i_matrix[patch_h_shift+patch_w_j, obj_idx] = 1 # mark 2D-3D patch-object pairs
+                    e2j_matrix[patch_h_shift+patch_w_j, obj_idx] = 0 # mark 2D-3D patch-object unpairs
         ## e1j_matrix, (num_patch, num_patch), mark unpaired patch-patch pair for image patches
         e1j_matrix = np.zeros( (self.num_patch, self.num_patch), dtype=np.uint8)
         for patch_h_i in range(self.patch_h):
@@ -572,7 +576,9 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         ## f1j_matrix
         obj_cates = [obj_3D_idx2info[obj_idx][2] for obj_idx in range(len(obj_3D_idx2info))]
         obj_cates_arr = np.array(obj_cates)
-        f1j_matrix = obj_cates_arr.reshape(1, -1) != obj_cates_arr.reshape(-1, 1)
+        # f1j_matrix = obj_cates_arr.reshape(1, -1) != obj_cates_arr.reshape(-1, 1)
+        f1j_matrix = np.ones( (num_objs, num_objs), dtype=np.uint8)
+        np.fill_diagonal(f1j_matrix, 0)
         
         assoc_data_dict = {
             'e1i_matrix': torch.from_numpy(e1i_matrix).float(),
@@ -726,7 +732,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         data_dict['sg_obj_idxs'] = sg_obj_idxs
         data_dict['sg_obj_idxs_tensor'] = sg_obj_idxs_tensor
         data_dict['candidate_scans'] = candidate_scans
-        
         if len(batch) > 0:
             return data_dict
         else:
@@ -739,7 +744,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
     
     def collate_fn(self, batch):
         return self.collateBatchDicts(batch)
-
         
     def __len__(self):
         return len(self.data_items)

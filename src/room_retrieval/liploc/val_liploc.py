@@ -141,6 +141,7 @@ class RoomRetrivalScore():
         top_k_recall_non_temporal = {"R@{}_NT_S".format(k): 0. for k in top_k_list}
         retrieval_time_temporal = 0.
         retrieval_time_non_temporal = 0.
+        img_forward_time = 0.
         
         for batch_i in range(batch_size):
             cur_img = data_dict['camera_image'][batch_i].unsqueeze(0)
@@ -161,7 +162,9 @@ class RoomRetrivalScore():
                 range_img = torch_util.to_cuda(range_img)
                 scans_embeddings[candidate_scan_id] = self.forward_lidar(range_img).squeeze(0)
             ## calculate similarity
+            start_time = time.time()
             cur_img_embeddings = self.forward_camera(cur_img).squeeze(0)
+            img_forward_time += time.time() - start_time
             scans_embeddings_cpu = torch_util.release_cuda_torch(scans_embeddings)
             cur_img_embeddings_cpu = torch_util.release_cuda_torch(cur_img_embeddings)
             start_time = time.time()
@@ -201,10 +204,12 @@ class RoomRetrivalScore():
         for k in top_k_list:
             top_k_recall_temporal["R@{}_T_S".format(k)] /= 1.0*batch_size
             top_k_recall_non_temporal["R@{}_NT_S".format(k)] /= 1.0*batch_size
-        retrieval_time_temporal = retrieval_time_temporal / 1.0*batch_size
-        retrieval_time_non_temporal = retrieval_time_non_temporal / 1.0*batch_size
+        retrieval_time_temporal = retrieval_time_temporal / (1.0*batch_size)
+        retrieval_time_non_temporal = retrieval_time_non_temporal / (1.0*batch_size)
+        img_forward_time = img_forward_time / (1.0*batch_size)
         
         result = {
+            'img_forward_time': img_forward_time,
             'time_T_S': retrieval_time_temporal,
             'time_NT_S': retrieval_time_non_temporal,
         }

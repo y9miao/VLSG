@@ -729,7 +729,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         data_dict['sg_obj_idxs'] = sg_obj_idxs
         data_dict['sg_obj_idxs_tensor'] = sg_obj_idxs_tensor
         data_dict['candidate_scans'] = candidate_scans
-        
         if len(batch) > 0:
             return data_dict
         else:
@@ -742,7 +741,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
     
     def collate_fn(self, batch):
         return self.collateBatchDicts(batch)
-
         
     def __len__(self):
         return len(self.data_items)
