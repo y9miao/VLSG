@@ -81,8 +81,8 @@ class MultiModalEncoder(nn.Module):
             self.object_encoder = PointNetfeat(global_feat=True, batch_norm=True, point_size=3, input_transform=False, feature_transform=False, out_size=self.pt_out_dim)
         elif 'pct' in self.modules:
             self.object_encoder = NaivePCT()
-        else:
-            raise NotImplementedError
+        # else:
+        #     raise NotImplementedError
         
         self.object_embedding = nn.Linear(self.pt_out_dim, self.emb_dim)
         
