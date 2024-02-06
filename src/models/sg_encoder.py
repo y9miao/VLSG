@@ -172,5 +172,7 @@ class MultiModalEncoder(nn.Module):
             
             joint_emb = self.fusion(all_embs)
             embs['joint'] = joint_emb
+        else:
+            embs['joint'] = embs[self.modules[0]]
         
         return embs
