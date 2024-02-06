@@ -331,7 +331,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 self.obj_3D_anno[scan_id][obj_id] = (scan_id, obj_id, obj_nyu_category)
                 
         # load 3D obj image patch paths for each scan
-        self.img_patch_dim = self.cfg.sgaligner.model.img_patch_dim
+        self.img_patch_feat_dim = self.cfg.sgaligner.model.img_patch_feat_dim
         obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
         self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
         self.obj_3D_img_patch_paths = {}
@@ -681,17 +681,21 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 obj_img_patches[scan_id] = {}
                 for obj_id in obj_ids:
                     if obj_id not in obj_img_patches_scan:
-                        obj_img_patch_embs = np.zeros((1, self.img_patch_dim))
+                        obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
                         obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
                         continue
                     
-                    obj_img_patch_embs = []
+                    obj_img_patch_embs_list = []
                     for frame_idx in obj_img_patches_scan[obj_id]:
-                        obj_img_patch_embs.append(obj_img_patches_scan[obj_id][frame_idx])
-                    if len(obj_img_patch_embs) == 0:
-                        obj_img_patch_embs = np.zeros((1, self.img_patch_dim))
+                        if obj_img_patches_scan[obj_id][frame_idx] is not None:
+                            embs_frame = obj_img_patches_scan[obj_id][frame_idx]
+                            embs_frame = embs_frame.reshape(1, -1) if embs_frame.ndim == 1 else embs_frame
+                            obj_img_patch_embs_list.append(embs_frame)
+                        
+                    if len(obj_img_patch_embs_list) == 0:
+                        obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
                     else:
-                        obj_img_patch_embs = np.concatenate(obj_img_patch_embs, axis=0)
+                        obj_img_patch_embs = np.concatenate(obj_img_patch_embs_list, axis=0)
                         if obj_img_patch_embs.shape[0] > self.obj_patch_num:
                             random_idx = np.random.choice(obj_img_patch_embs.shape[0], self.obj_patch_num, replace=False)
                             obj_img_patch_embs = obj_img_patch_embs[random_idx, :]

@@ -14,7 +14,7 @@ import tqdm
 
 from yaml import scan
 
-workspace_dir = osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__)))))
+workspace_dir = osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))))
 src_dir = osp.join(workspace_dir, 'src')
 sys.path.append(workspace_dir)
 sys.path.append(src_dir)

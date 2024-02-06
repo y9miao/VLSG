@@ -1,7 +1,11 @@
+from curses import color_content
+from itertools import count
+from operator import is_
 import os
 import os.path as osp
 from platform import node
 import sys
+from turtle import color
 from matplotlib.pyplot import sca
 
 import numpy as np
@@ -55,8 +59,8 @@ class RoomRetrievalVisualizer():
         if self.img_rotate:
             self.patch_h = self.image_patch_w
             self.patch_w = self.image_patch_h
-            self.image_w = self.cfg.data.img.h
-            self.image_h = self.cfg.data.img.w
+            # self.image_w = self.cfg.data.img.h
+            # self.image_h = self.cfg.data.img.w
         else:
             self.patch_h = self.image_patch_h
             self.patch_w = self.image_patch_w
@@ -179,7 +183,7 @@ class RoomRetrievalVisualizer():
     
     def generate_camera_frustum(self, cam_extrinsics, target_scene_center,
                                 cam_color = [0, 0, 0],
-                                img_width_m = 0.5, cam_depth_range = 0.8, 
+                                img_width_m = 0.7, cam_depth_range = 0.8, 
                                 point_size = 0.05):
         img_height_m = img_width_m * self.image_h / self.image_w
         
@@ -231,11 +235,10 @@ class RoomRetrievalVisualizer():
         colors = np.array([color for _ in range((points.shape[0]))])
         return points, colors
     
-    def generate_scene_graph_pcs(self, scan_id, position, pcs_anno, pcs_num_th = 100):
+    def generate_scene_graph_pcs(self, scan_id, position, pcs_anno, scene_points, pcs_num_th = 100, ball_size = 0.2):
         nodes_pcs = None
         nodes_colors = None
         
-        scene_points = np.stack([pcs_anno['x'], pcs_anno['y'], pcs_anno['z']]).transpose((1, 0))
         obj_ids = pcs_anno['objectId']
         for obj_id in self.obj_color[scan_id]:
             obj_points = scene_points[obj_ids == obj_id]
@@ -244,7 +247,7 @@ class RoomRetrievalVisualizer():
             obj_points += position
             obj_color = self.obj_color[scan_id][obj_id]
             obj_position = np.mean(obj_points, axis=0)
-            node_pcs, node_colors = self.generate_ball_pcl(obj_position, 0.2, obj_color)
+            node_pcs, node_colors = self.generate_ball_pcl(obj_position, ball_size, obj_color)
             
             nodes_pcs = node_pcs if nodes_pcs is None else np.concatenate([nodes_pcs, node_pcs], axis=0)
             nodes_colors = node_colors if nodes_colors is None else np.concatenate([nodes_colors, node_colors], axis=0)
@@ -322,9 +325,70 @@ class RoomRetrievalVisualizer():
         points_correct += position_correct
         colors_correct = np.array(colors_correct)
         return points_pred, colors_pred, points_correct, colors_correct
-      
+    
+    def generate_patch_match_arrows(self, scan_id, pcs_anno, scene_points, pred_obj_ids_flatten, gt_obj_id_flatten,
+                                    image_position, image_3Dsize_w, image_3Dsize_h, obj_ball_size, th_counts = 2):
+        def map_patch_pos_to_3D_pos(patch_pos, image_position, image_size_w, image_size_h):
+            x = (patch_pos[1]) * image_size_w / self.patch_w
+            y = -(patch_pos[0]) * image_size_h / self.patch_h
+            z = 0
+            return np.array([x, y, z]) + image_position
+        obj3D_ids_anno = pcs_anno['objectId']
+        
+        # get patch match result
+        color_right = np.array([0, 255, 0])
+        color_wrong = np.array([255, 0, 0])
+        arrows = []
+        obj_patch_spheres_points = None
+        obj_patch_spheres_colors = None
+        pred_obj_ids = pred_obj_ids_flatten.reshape((self.patch_h, self.patch_w))
+        gt_obj_ids = gt_obj_id_flatten.reshape((self.patch_h, self.patch_w))
+        pred_obj_ids_unique, counts = np.unique(pred_obj_ids_flatten[gt_obj_id_flatten!=self.undefined], return_counts=True)
+        for obj_idx in range(pred_obj_ids_unique.shape[0]):
+            obj_id = pred_obj_ids_unique[obj_idx]
+            count = counts[obj_idx]
+            idxs_3D = (obj3D_ids_anno == obj_id)
+            if obj_id == self.undefined or count<=th_counts or np.sum(idxs_3D) < 100:
+                continue
+            obj_positions = np.argwhere(pred_obj_ids == obj_id)
+            obj_pos_mean = np.mean(obj_positions, axis=0)
+            # find nearst obj_positions of the obj to obj_pos_mean
+            obj_positions_relative = obj_positions - obj_pos_mean
+            dist_norm = np.linalg.norm(obj_positions_relative, axis=1)
+            nearest_idx = np.argsort(dist_norm)[0]
+            obj_patch_pos = obj_positions[nearest_idx]
+            obj_patch_pos_3D = map_patch_pos_to_3D_pos(obj_patch_pos, image_position, 
+                                image_3Dsize_w, image_3Dsize_h)
+            # is prediction correct
+            is_correct = np.sum( pred_obj_ids[pred_obj_ids == obj_id] == 
+                    gt_obj_ids[pred_obj_ids == obj_id]) > 0.3 * count
+            if is_correct:
+                # get positions of the obj in 3D
+                obj_3D_points = scene_points[idxs_3D]
+                obj_3D_center = np.mean(obj_3D_points, axis=0)
+                ## make the arrow shorter so that the head of arrow is outside the object ball
+                arrow_start = obj_patch_pos_3D
+                arrow_end_in_ball = obj_3D_center
+                arrow_length = np.linalg.norm(arrow_end_in_ball - arrow_start)
+                lambda_interpo = (arrow_length - obj_ball_size) / arrow_length
+                arrow_end = arrow_start + lambda_interpo * (arrow_end_in_ball - arrow_start)
+                
+                ## also generate the ball at the obj patch
+                obj_balls_at_patch, obj_colors_at_patch = self.generate_ball_pcl(arrow_start, obj_ball_size,
+                                                                                self.obj_color[scan_id][obj_id])
+                obj_patch_spheres_points = obj_balls_at_patch if obj_patch_spheres_points is None \
+                    else np.concatenate([obj_patch_spheres_points, obj_balls_at_patch], axis=0)
+                obj_patch_spheres_colors = obj_colors_at_patch if obj_patch_spheres_colors is None \
+                    else np.concatenate([obj_patch_spheres_colors, obj_colors_at_patch], axis=0)
+                # get arrow
+                arrow = [arrow_start, arrow_end, color_right if is_correct else color_wrong]
+                arrows.append(arrow)
+                
+        return arrows, obj_patch_spheres_points, obj_patch_spheres_colors
+            
+            
     # generate visualization file of patch match result of certain frame in certain scan
-    def visualize_patch_match(self, scan_id, frame_idx):
+    def visualize_patch_match(self, our_dir, scan_id, frame_idx):
         
         # get retrieval result
         retrieval_record = self.retrieval_result[scan_id]['frames_retrieval'][frame_idx]
@@ -337,17 +401,20 @@ class RoomRetrievalVisualizer():
             image = np.flip(image, 1)
             
         # load 3D anno
-        pcs_anno, scene_graph, scene_points, scene_colors = self.get_scene_info(scan_id)
+        pcs_anno, scene_graph, scene_points, scene_colors = self.get_scene_info(scan_id, th_z = 2.5)
         ## get scene position
+        position_pcs = np.array([0, 0, 0])
         scene_center = np.mean(scene_points, axis=0)
         scene_size = np.max(scene_points, axis=0) - np.min(scene_points, axis=0)
         scene_max = np.max(scene_points, axis=0)
         scene_min = np.min(scene_points, axis=0)
         
         # get scene graph pcs
-        position_sg = np.array([scene_center[0] + scene_size[0] * 1.1, scene_center[1], scene_center[2]])
+        # position_sg = np.array([scene_center[0] + scene_size[0] * 1.1, scene_center[1], scene_center[2]])
+        position_sg = position_pcs
+        node_radius = 0.2
         sg_pcs, sg_colors = self.generate_scene_graph_pcs(
-                scan_id, position_sg, pcs_anno, pcs_num_th = 100)
+                scan_id, position_sg, pcs_anno, scene_points, ball_size=node_radius, pcs_num_th = 100)
         ## get scene graph position
         sg_center = np.mean(sg_pcs, axis=0)
         sg_size = np.max(sg_pcs, axis=0) - np.min(sg_pcs, axis=0)
@@ -360,17 +427,17 @@ class RoomRetrievalVisualizer():
         img_pcs_size_w = adaptive_dist * image.shape[1]
         img_pcs_size_h = adaptive_dist * image.shape[0]
         ## set image position near the scene center in X-Y plane
-        image_position = np.array([scene_center[0] - img_pcs_size_w/2.0, # X align with center of the scene
-                                   scene_min[1], # Y align with the min of the scene
-                                   scene_center[2]]) # Z align with the center of the scene
+        image_position = np.array([scene_center[0] - img_pcs_size_w * 1.6, # X align with center of the scene
+                                   scene_min[1] - 0.3, # Y align with the min of the scene
+                                   scene_min[2] - 0.2]) # Z align with the center of the scene
         ## make the image half large as the scene, dist*img_h = scene_size[1]/2 in Y direction
         image_points, image_colors = self.generate_image_pcs(image, image_position, resolution=1, dist=adaptive_dist)
         
         # generate anno and pred image pcs
         ## get image positions 
-        position_pred = np.array([sg_center[0] - img_pcs_size_w/2.0, # X align with center of the scene graph
-                                   scene_min[1], # Y align with the min of the scene graph
-                                   sg_center[2]]) # Z align with the center of the scene graph
+        position_pred = np.array([scene_center[0] - img_pcs_size_w/2.0, # X align with center of the scene graph
+                                   image_position[1], # Y align with the min of the scene graph
+                                   image_position[2]]) # Z align with the center of the scene graph
         position_correct = np.array([position_pred[0] + 1.1 * img_pcs_size_w,
                                      position_pred[1],
                                     position_pred[2]])
@@ -380,6 +447,19 @@ class RoomRetrievalVisualizer():
         points_pred, colors_pred, points_correct, colors_correct = self.generate_image_pred_pcs(
             image, scan_id, position_pred, position_correct,
             pred_obj_id_flatten, gt_obj_id_flatten, dist=adaptive_dist)
+        
+        ## get arrows
+        arrows,obj_patch_spheres_points, obj_patch_spheres_colors = \
+            self.generate_patch_match_arrows(scan_id, pcs_anno, scene_points, 
+                    pred_obj_id_flatten, gt_obj_id_flatten, image_position, 
+                    img_pcs_size_w, img_pcs_size_h, 0.1)
+        
+        
+        # add camera frustum
+        cam_extrinsics = self.img_poses[scan_id][frame_idx]
+        target_scene_origin = position_pcs
+        line_ps_start, line_ps_end, points_frustum, colors_frustum = \
+            self.generate_camera_frustum(cam_extrinsics, target_scene_origin)
         
         vis = viz.Visualizer()
         vis.add_points(
@@ -402,11 +482,32 @@ class RoomRetrievalVisualizer():
             'correct_obj', 
             positions=points_correct,
             colors=colors_correct)
+        # add image frustum
+        vis.add_points(
+            'frustum', 
+            positions=points_frustum,
+            colors=colors_frustum)
+        vis.add_lines(
+            'frustum_lines', 
+            line_ps_start, line_ps_end)
+        # add arrows
+        for i, arrow in enumerate(arrows):
+            vis.add_arrow(
+                'arrow_{}'.format(i), 
+                arrow[0], arrow[1], arrow[2],
+                head_width=0.1,
+                stroke_width=0.05)
+        if obj_patch_spheres_points is not None:
+            vis.add_points(
+                'obj_patch_spheres', 
+                positions=obj_patch_spheres_points,
+                colors=obj_patch_spheres_colors)
+        
         
         # save visualization file
         # vis_folder = osp.join(self.vis_out_dir, scan_id, str(frame_idx), 'match')
-        common.ensure_dir(vis_folder)
-        vis.save(vis_folder)
+        common.ensure_dir(our_dir)
+        vis.save(our_dir)
         
     # generate visualization file of room retrieval result of certain frame in certain scan
     def visualize_room_retrieval(self, scan_id, frame_idx, out_dir, 
@@ -447,7 +548,7 @@ class RoomRetrievalVisualizer():
             
         top_k_scene_pcs_out = {}
         # set positions for the top k scene pcs
-        last_scene_center = np.array([0, 0, 0])
+        last_scene_origin = np.array([0, 0, 0])
         last_scene_max = np.array([0, 0, 0])
         last_scene_min = np.array([0, 0, 0])
         for i, candidate_scan_id in enumerate(top_k_scan_ids):
@@ -467,8 +568,8 @@ class RoomRetrievalVisualizer():
                 last_scene_min[2] - model_min[2]])
             scene_points_out = scene_points + position
             
-            # update last_scene_center, last_scene_size, last_scene_max
-            last_scene_center = position
+            # update last_scene_origin, last_scene_size, last_scene_max
+            last_scene_origin = position
             last_scene_max = model_max + position
             last_scene_min = model_min + position
             
@@ -476,7 +577,7 @@ class RoomRetrievalVisualizer():
                 'scene_points': scene_points_out, 
                 'scene_colors': scene_colors,
                 'model_size': model_size,
-                'scene_center': last_scene_center,
+                'scene_origin': last_scene_origin,
                 'scene_max': last_scene_max,
                 'scene_min': last_scene_min}
 
@@ -484,7 +585,7 @@ class RoomRetrievalVisualizer():
             text_content = 'scan: {}, score: {:.3f}'.format(candidate_scan_id[:8], 
                                                       room_scores[candidate_scan_id]*1.0/self.patch_num)
             text_position = np.array([
-                last_scene_min[0] + 0.5 * (last_scene_center[0] - last_scene_min[0]),
+                last_scene_min[0] + 0.5 * (last_scene_origin[0] - last_scene_min[0]),
                 last_scene_min[1] - 0.1,
                 last_scene_min[2]
             ])
@@ -496,19 +597,19 @@ class RoomRetrievalVisualizer():
         target_scene_pcs_out = top_k_scene_pcs_out[scan_id]
         target_model_size = target_scene_pcs_out['model_size']
         target_scene_min = target_scene_pcs_out['scene_min']
-        target_scene_center = target_scene_pcs_out['scene_center']
+        target_scene_origin = target_scene_pcs_out['scene_origin']
         adaptive_dist = target_model_size[1] / (image.shape[0])
         ## set image position below the target scene in Y aixs, X-Y plane   
-        image_position = np.array([target_scene_min[0] + 0.5 * (target_scene_center[0] - target_scene_min[0]),
+        image_position = np.array([target_scene_min[0] + 0.5 * (target_scene_origin[0] - target_scene_min[0]),
                                    target_scene_min[1] - 0.3, # Y align with the min of the scene
-                                   target_scene_center[2]]) # Z align with the center of the scene
+                                   target_scene_origin[2]]) # Z align with the center of the scene
         image_points, image_colors = self.generate_image_pcs(
             image, image_position, resolution=1, dist=adaptive_dist)
         
         # add image frustum
         cam_extrinsics = self.img_poses[scan_id][frame_idx]
         line_ps_start, line_ps_end, points_frustum, colors_frustum = \
-            self.generate_camera_frustum(cam_extrinsics, target_scene_center)
+            self.generate_camera_frustum(cam_extrinsics, target_scene_origin)
             
         vis = viz.Visualizer()
         # add scene pcs
@@ -543,24 +644,125 @@ class RoomRetrievalVisualizer():
         common.ensure_dir(out_dir)
         vis.save(out_dir)
         
+    def visualize_BestWorstK_Results(self, K = 5, temporal = False, th_counts = 4, th_objs = 2):
+        def metric_score(data_item, scan_id):
+            room_scores = data_item['room_score_scans_T'] if temporal \
+                else data_item['room_score_scans_NT']
+            room_sorted_by_scores =  [item[0] for item in \
+                sorted(room_scores.items(), key=lambda x: x[1], reverse=True)]
+            second_sim_scan = room_sorted_by_scores[1]
+            target_scan_id = scan_id
+            # ## use ratio of the target scan's score to the second similar scan's score as the score1
+            # if second_sim_scan not in room_scores or abs(room_scores[second_sim_scan]) < 1e-3:
+            #     return None
+            score_ratio = room_scores[target_scan_id] * 1.0 / room_scores[second_sim_scan]
+            
+            ## first make sure the room retrieval is valid
+            score1 = 1000 * int(target_scan_id == room_sorted_by_scores[0])
+            
+            ## use num of correctly matched objects as the score2
+            gt_anno = data_item['gt_anno'].cpu().numpy()
+            matched_obj_obj_ids = data_item['matched_obj_obj_ids']
+            gt_anno_valid = gt_anno[gt_anno != self.undefined]
+            matched_obj_obj_ids_valid = matched_obj_obj_ids[gt_anno != self.undefined]
+            pred_obj_ids_unique, counts = np.unique(matched_obj_obj_ids_valid, return_counts=True)
+            num_correct = 0
+            for i, obj_id in enumerate(pred_obj_ids_unique):
+                counts_obj = counts[i]
+                if counts_obj < th_counts:
+                    continue
+                is_correct = np.sum(matched_obj_obj_ids_valid[matched_obj_obj_ids_valid == obj_id] == \
+                                    gt_anno_valid[matched_obj_obj_ids_valid == obj_id]) > 0.3 * counts_obj
+                num_correct += int(is_correct)
+            ## match success ratio
+            match_success_ratio = np.sum(matched_obj_obj_ids_valid == gt_anno_valid) * 1.0 / gt_anno_valid.shape[0]
+            
+            score2 = num_correct*match_success_ratio*score_ratio if score1 > 0 else score_ratio
+            
+            ## target 
+            return score1 +  score2
+        
+        def is_valid(data_item):
+            gt_anno = data_item['gt_anno'].cpu().numpy()
+            matched_obj_obj_ids = data_item['matched_obj_obj_ids']
+            # if there is no enough annotated/ predicted objects, then return False
+            obj_ids_gt, counts_gt = np.unique(gt_anno, return_counts=True)
+            obj_ids_pred, counts_pred = np.unique(matched_obj_obj_ids, return_counts=True)
+            ## filter out undefined and counts < th_counts
+            invalid_idxs_gt = np.logical_or(obj_ids_gt == self.undefined, counts_gt < th_counts)
+            obj_ids_gt = obj_ids_gt[invalid_idxs_gt]
+            invalid_idxs_pred = np.logical_or(obj_ids_pred == self.undefined, counts_pred < th_counts)
+            obj_ids_pred = obj_ids_pred[invalid_idxs_pred]
+            if obj_ids_gt.shape[0] < th_objs or obj_ids_pred.shape[0] < th_objs:
+                return False
+            return True
+        # get scores of all data items
+        data_item_scores_best = {}
+        data_item_scores_worst = {}
+        for scan_id in self.scan_ids:
+            room_retrieval_record_scan = self.retrieval_result[scan_id]['frames_retrieval']
+            metric_score_best = None
+            metric_score_worst = None
+            for frame_idx in room_retrieval_record_scan:
+                if not is_valid(room_retrieval_record_scan[frame_idx]):
+                    continue
+                retrieval_record = room_retrieval_record_scan[frame_idx]
+                score = metric_score(retrieval_record, scan_id)
+                if score is not None:
+                    if metric_score_best is None or score > metric_score_best[1]:
+                        metric_score_best = [(scan_id, frame_idx), score]
+                    if metric_score_worst is None or score < metric_score_worst[1]:
+                        metric_score_worst = [(scan_id, frame_idx), score]
+            if metric_score_best is not None:
+                data_item_scores_best[metric_score_best[0]] = metric_score_best[1]
+            if metric_score_worst is not None:
+                data_item_scores_worst[metric_score_worst[0]] = metric_score_worst[1]
+                
+        # select top K and worst k data items
+        ## select top K and worst k
+        best_sorted = sorted(data_item_scores_best.items(), key=lambda x: x[1], reverse=True)
+        top_K_data_items = best_sorted[:K]
+        worst_sorted = sorted(data_item_scores_worst.items(), key=lambda x: x[1], reverse=False)
+        worst_K_data_items = worst_sorted[:K]
+        
+        # visualize top K and worst K
+        out_top_K_dir = osp.join(self.vis_out_dir, 'top_K')
+        out_worst_K_dir = osp.join(self.vis_out_dir, 'worst_K')
+        for data_item in top_K_data_items:
+            scan_id, frame_idx = data_item[0]
+            ## visualize room retrieval
+            retrieval_out_dir = osp.join(out_top_K_dir, scan_id, frame_idx, 'room_retrieval')
+            self.visualize_room_retrieval(scan_id, frame_idx, retrieval_out_dir, top_k=5, temporal=temporal)
+            ## visualize patch match
+            match_out_dir = osp.join(out_top_K_dir, scan_id, frame_idx, 'patch_match')
+            self.visualize_patch_match(match_out_dir, scan_id, frame_idx)
+        for data_item in worst_K_data_items:
+            scan_id, frame_idx = data_item[0]
+            ## visualize room retrieval
+            retrieval_out_dir = osp.join(out_worst_K_dir, scan_id, frame_idx, 'room_retrieval')
+            self.visualize_room_retrieval(scan_id, frame_idx, retrieval_out_dir, top_k=5, temporal=temporal)
+            ## visualize patch match
+            match_out_dir = osp.join(out_worst_K_dir, scan_id, frame_idx, 'patch_match')
+            self.visualize_patch_match(match_out_dir, scan_id, frame_idx)
+        
 def main():
     os.environ["VLSG_SPACE"] = "/home/yang/big_ssd/Scan3R/VLSG"
     os.environ["Scan3R_ROOT_DIR"] = "/home/yang/big_ssd/Scan3R/3RScan"
-    retrieval_result_dir = "/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PatchObjMatch/NOI_Aug3D_Step2_E8"
+    retrieval_result_dir = "/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PatchObjMatch/NOI_Aug3D_Step2_E17"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/test/Vis/room_retrie_cfg.yaml"
     
     from configs import update_config_room_retrival, config
     cfg = update_config_room_retrival(config, cfg_file, ensure_dir=False)
     visualizer = RoomRetrievalVisualizer(cfg, 'val', retrieval_result_dir)
     
-    scan_id = '0cac7584-8d6f-2d13-8df8-c05e4307b418'
-    frame_idx = '000000'
+    # scan_id = '0cac7584-8d6f-2d13-8df8-c05e4307b418'
+    # frame_idx = '000000'
+    # patch_match_out_dir = osp.join(visualizer.vis_out_dir, 'patch_match', scan_id, frame_idx)
+    # visualizer.visualize_patch_match(patch_match_out_dir, scan_id, frame_idx)
+    # room_retrie_out_dir = osp.join(visualizer.vis_out_dir, 'room_retrieval', scan_id, frame_idx)
+    # visualizer.visualize_room_retrieval(scan_id, frame_idx, room_retrie_out_dir)
     
-    visualizer.visualize_patch_match(scan_id, frame_idx)
-    
-    room_retrie_out_dir = osp.join(visualizer.vis_out_dir, 'room_retrieval', scan_id, frame_idx)
-    visualizer.visualize_room_retrieval(scan_id, frame_idx, room_retrie_out_dir)
-    
+    visualizer.visualize_BestWorstK_Results()
     
 if __name__ == "__main__":
     main()

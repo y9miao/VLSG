@@ -655,6 +655,10 @@ class GCViTLayer(nn.Module):
         if self.downsample is None:
             return x, x
         return self.downsample(x), x
+    
+    def forward_global_query(self, x):
+        q_global = self.q_global_gen(_to_channel_first(x))
+        return q_global
 
 
 
@@ -789,3 +793,12 @@ class GCViT(nn.Module):
     def forward_features(self, x):
         x = self.forward_embeddings(x)
         return self.forward_tokens(x)
+    
+    def forward_global_query(self, x):
+        x = self.forward_embeddings(x)
+        for idx, level in enumerate(self.levels):
+            if idx == len(self.levels)-1:
+                q_global = level.forward_global_query(x)
+            else:
+                x, xo = level(x)
+        return q_global

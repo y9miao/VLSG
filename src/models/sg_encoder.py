@@ -58,7 +58,8 @@ class MultiModalFusion(nn.Module):
 class MultiModalEncoder(nn.Module):
     def __init__(self, modules, rel_dim, attr_dim, img_feat_dim,
                  hidden_units=[3, 128, 128], heads = [2, 2], emb_dim = 100, pt_out_dim = 256,
-                 dropout = 0.0, attn_dropout = 0.0, instance_norm = False):
+                 dropout = 0.0, attn_dropout = 0.0, instance_norm = False,
+                 use_transformer_aggregator=False):
         super(MultiModalEncoder, self).__init__()
         self.modules = modules
         self.pt_out_dim = pt_out_dim
@@ -90,6 +91,8 @@ class MultiModalEncoder(nn.Module):
         if 'img_patch' in self.modules:
             self.img_patch_encoder = PatchAggregator(d_model=img_feat_dim, nhead=2, num_layers=1, dropout=self.dropout)
             self.img_patch_embedding = nn.Linear(img_feat_dim, self.emb_dim)
+            # whether to use transformer_encoder
+            self.use_transformer_aggregator = use_transformer_aggregator
         
         self.fusion = MultiModalFusion(modal_num=self.inner_view_num, with_weight=1)
         
@@ -146,9 +149,14 @@ class MultiModalEncoder(nn.Module):
                     img_patch_feat_scan = data_dict['obj_img_patches'][scan_id]
                     for obj in obj_ids:
                         img_patches = img_patch_feat_scan[obj]
-                        img_patches_cls = self.img_patch_encoder(img_patches.unsqueeze(0))
-                        obs_img_patch_emb = torch.cat([img_patches_cls]) if obs_img_patch_emb is None else \
-                                    torch.cat([obs_img_patch_emb, img_patches_cls])
+                        if self.use_transformer_aggregator:
+                            img_patches = img_patches.unsqueeze(0)
+                            img_patches_cls = self.img_patch_encoder(img_patches)
+                            obs_img_patch_emb = torch.cat([img_patches_cls]) if obs_img_patch_emb is None else \
+                                        torch.cat([obs_img_patch_emb, img_patches_cls])
+                        else:
+                            obs_img_patch_emb = torch.cat([img_patches]) if obs_img_patch_emb is None else \
+                                        torch.cat([obs_img_patch_emb, img_patches])
                                     
                     start_object_idx += obj_count
                 emb = self.img_patch_embedding(obs_img_patch_emb)
