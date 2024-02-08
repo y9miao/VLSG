@@ -79,3 +79,4 @@ sgaligner:
     data_mode: orig
 
 mode: "val"
+split: "test"

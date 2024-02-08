@@ -5,7 +5,7 @@ import sys
 from tracemalloc import start
 from sklearn.utils import resample
 from yaml import scan
-vlsg_dir = "/home/yang/big_ssd/Scan3R/VLSG"
+vlsg_dir = osp.join(os.environ['VLSG_SPACE'])
 sys.path.insert(0, vlsg_dir)
 from utils import common, scan3r
 import argparse
@@ -217,7 +217,8 @@ def main():
     from configs import config, update_config
     parser, args = parse_args()
     cfg = update_config(config, args.config,  ensure_dir = False)
-    scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, 'val')
+    split = cfg.split
+    scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, split)
     scan3r_gcvit_generator.register_model()
     scan3r_gcvit_generator.generateFeatures()
     
