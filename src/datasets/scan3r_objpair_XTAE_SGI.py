@@ -166,15 +166,18 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         
         # if split is val, then use all object from other scenes as negative samples
         # if room_retrieval, then use load additional data items
+        self.rescan = cfg.data.rescan
         self.room_retrieval = False
         if split == 'val' or split == 'test':
             self.num_negative_samples = -1
             self.room_retrieval = True
             self.room_retrieval_epsilon_th = cfg.val.room_retrieval.epsilon_th
+            self.rescan = True
+            self.step = 1
+            
         
         # scans info
         self.temporal = cfg.data.temporal
-        self.rescan = cfg.data.rescan
         scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
         all_scan_data = common.load_json(scan_info_file)
         self.refscans2scans = {}

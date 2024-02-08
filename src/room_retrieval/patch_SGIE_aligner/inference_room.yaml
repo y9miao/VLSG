@@ -13,7 +13,7 @@ data :
   temporal: True
   resplit: True
   img:
-    img_step: 1
+    img_step: 2
     w: 960
     h: 540
   img_encoding:
@@ -31,8 +31,8 @@ data :
     num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
   scene_graph:
-    obj_img_patch: "Features3D/obj_GCVit_16_9_scan_top10"
-    obj_patch_num: 100
+    obj_img_patch: "Features3D/obj_GCVit_GlobalToken_scan_top1"
+    obj_patch_num: 60
 
 # for sgaligner
 sgaligner:
@@ -44,11 +44,12 @@ sgaligner:
 
   seed: 42
   model_name    : 'sgaligner'
-  modules       : ['point', 'gat', 'rel', 'attr']
+  modules       : ['point', 'gat', 'rel', 'attr', 'img_patch']
   # modules       : ['point', 'gat', 'rel', 'attr']
   use_predicted : False
   registration  : False
   scan_type     : 'scan'
+  img_transformer: False
 
   preprocess :
     pc_resolutions      : [64, 128, 256, 512]
@@ -60,7 +61,7 @@ sgaligner:
   model :
     rel_dim             : 41
     attr_dim            : 164
-    img_patch_dim       : 512
+    img_patch_feat_dim  : 512
     alignment_thresh    : 0.4
 
   train :
@@ -91,7 +92,7 @@ model:
     encoder_dim: 400
   # 3D obj embedding encoder
   obj:
-    embedding_dim: 400 # fixed
+    embedding_dim: 500 # fixed
     embedding_hidden_dims: [512, 512]
     encoder_dim: 400
   other:
@@ -106,7 +107,7 @@ train:
   num_workers: 8
   use_pretrained: False
   log_steps: 1
-  snapshot_steps: 100
+  snapshot_steps: 1
   optim:
     lr: 0.0011
     scheduler: "step"
@@ -148,12 +149,12 @@ val:
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "NOI_Aug3D_Step2_E17"
+    method_name: "SGAI_GCVit_Top1_E12"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./week10/NOI_Aug_Step2/epoch-17.pth.tar" 
+  resume: "./week11/SGAI_GCVitTop1_E12/epoch-12.pth.tar" 
 # others
 seed: 42
 

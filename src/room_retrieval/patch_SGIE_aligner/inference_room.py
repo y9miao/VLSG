@@ -138,7 +138,7 @@ class RoomRetrivalScore():
         sg_modules = cfg.sgaligner.modules
         sg_rel_dim = cfg.sgaligner.model.rel_dim
         attr_dim = cfg.sgaligner.model.attr_dim
-        img_patch_feat_dim = cfg.sgaligner.model.img_patch_dim
+        img_patch_feat_dim = cfg.sgaligner.model.img_patch_feat_dim
         ## encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
         patch_encoder_dim = cfg.model.patch.encoder_dim

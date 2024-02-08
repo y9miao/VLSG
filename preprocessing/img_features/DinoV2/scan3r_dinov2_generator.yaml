@@ -1,31 +1,25 @@
-seed: 42
-
 data :
   name            : Scan3R
   root_dir        : '' # to be read in code from env varia  
   rescan: True
   resplit: True
-  log_dir: ""
+  log_dir: "./preprocessing/img_features/DinoV2"
   img:
-    img_step: 1
+    img_step: 2
     w: 960
     h: 540
   img_encoding:
     # image patch config
-    resize_w: 1024 # resize image for backbone GCVit
-    resize_h: 576
+    resize_w: 224 # resize image for backbone GCVit
+    resize_h: 126
     img_rotate: True # rotate w,h for backbone GCVit
-    patch_w: 32 # number of patchs in width
-    patch_h: 18
-    reduce: 1 
-    feature_dir: "Features2D/GCVit_16_9_scan"
-  obj_img:
-    topk: 20
-    name: "Features3D/obj_GCVit_GlobalToken_scan_top20"
+    patch_w: 16 # number of patchs in width
+    patch_h: 9
+  inference_step: 100
 
 model:
-  name: GCVit_16_9_scan
-  version: "GCVit"
+  name: DinoV2_16_9_scan
+  version: "VitL/14"
   cfg_file: "/home/yang/big_ssd/Scan3R/VLSG/src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py"
   pretrained: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/GCVit/gcvit_1k_tiny.pth.tar"
   # GCVit backbone
@@ -57,7 +51,7 @@ sgaligner:
   pred_subfix     : inseg.ply
 
   seed: 42
-  model_name    : 'sgaligner'
+  model_name    : 'DinoV2_'
   modules       : ['point', 'gat', 'rel', 'attr']
   use_predicted : False
   registration  : False
@@ -83,3 +77,5 @@ sgaligner:
     overlap_low         : 0.0
     overlap_high        : 0.0
     data_mode: orig
+
+mode: "val"

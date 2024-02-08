@@ -1,5 +1,5 @@
 seed: 42
-
+mode: 'val'
 data :
   name            : Scan3R
   root_dir        : '' # to be read in code from env varia  
@@ -15,38 +15,16 @@ data :
     resize_w: 1024 # resize image for backbone GCVit
     resize_h: 576
     img_rotate: True # rotate w,h for backbone GCVit
-    patch_w: 32 # number of patchs in width
-    patch_h: 18
-    reduce: 1 
-    feature_dir: "Features2D/GCVit_16_9_scan"
+    feature_dir: "Features2D/OpenSeg_16_9_scan"
   obj_img:
-    topk: 20
-    name: "Features3D/obj_GCVit_GlobalToken_scan_top20"
+    topk: 5
+    name: "Features3D/obj_openmask3d_top5"
+  feat_dim: 768
+  cross_scene:
+    use_cross_scene: True
+    num_scenes: 9 # number of scenes 
+    num_negative_samples: -1 # number of negative samples 
 
-model:
-  name: GCVit_16_9_scan
-  version: "GCVit"
-  cfg_file: "/home/yang/big_ssd/Scan3R/VLSG/src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py"
-  pretrained: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/GCVit/gcvit_1k_tiny.pth.tar"
-  # GCVit backbone
-  backbone: 
-    # to be read in code from env varia, relative to VLSG_SPACE
-    use_pretrained: True
-    cfg_file: "./src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py"
-    pretrained: "./checkpoint/GCVit/gcvit_1k_tiny.pth.tar"
-    num_reduce: 1 # should be log2(resize_w/(32*patch_w))
-    backbone_dim: 512 # fixed
-  # patch feature encoder
-  patch:
-    hidden_dims: [512, 512, 512] # last is the out dim
-    encoder_dim: 400
-  # 3D obj embedding encoder
-  obj:
-    embedding_dim: 400 # fixed
-    embedding_hidden_dims: [512, 512]
-    encoder_dim: 400
-  other:
-    drop: 0.0
 
 # for sgaligner
 sgaligner:
@@ -83,3 +61,12 @@ sgaligner:
     overlap_low         : 0.0
     overlap_high        : 0.0
     data_mode: orig
+
+# for validation
+val:
+  batch_size: 16
+  num_workers: 2
+  pretrained: "./"
+  room_retrieval:
+    epsilon_th: 0.8
+    method_name: "OpenMask3D"

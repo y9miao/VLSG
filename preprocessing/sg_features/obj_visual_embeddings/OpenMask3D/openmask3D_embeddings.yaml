@@ -20,8 +20,8 @@ data :
     reduce: 1 
     feature_dir: "Features2D/GCVit_16_9_scan"
   obj_img:
-    topk: 20
-    name: "Features3D/obj_GCVit_GlobalToken_scan_top20"
+    topk: 5
+    name: "Features3D/obj_openmask3d_top5"
 
 model:
   name: GCVit_16_9_scan
