@@ -449,8 +449,8 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 patch_features = data_item['patch_features']
             else:
                 patch_features = common.load_pkl_data(data_item['patch_features_path'])[frame_idx]
-                if patch_features.ndim == 2:
-                    patch_features = patch_features.reshape(self.patch_h, self.patch_w , self.img_patch_feat_dim)
+            if patch_features.ndim == 2:
+                patch_features = patch_features.reshape(self.patch_h, self.patch_w , self.img_patch_feat_dim)
         else:
             # img data
             img_path = data_item['img_path']
