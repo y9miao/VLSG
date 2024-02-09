@@ -142,7 +142,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         self.image_resize_w = self.cfg.data.img_encoding.resize_w
         self.image_resize_h = self.cfg.data.img_encoding.resize_h
         self.img_rotate = self.cfg.data.img_encoding.img_rotate
-        # 2D_patch_anno_dir
+        # 2D_patch_anno size
         self.image_patch_w = self.cfg.data.img_encoding.patch_w
         self.image_patch_h = self.cfg.data.img_encoding.patch_h
         # 2D patch anno
@@ -220,15 +220,30 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 for scan_id in self.scan_ids:
                     self.patch_features_paths[scan_id] = osp.join(self.patch_feature_folder, "{}.pkl".format(scan_id))
                 
-        # load 2D gt obj id annotation patch
-        self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
-        self.obj_2D_annos_path = {}
+        # # load 2D gt obj id annotation patch
+        # self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
+        # self.obj_2D_annos_path = {}
+        # for scan_id in self.scan_ids:
+        #     anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
+        #     self.obj_2D_annos_path[scan_id] = anno_2D_file
+        
+        # load patch anno
+        self.patch_anno = {}
+        self.patch_anno_folder = osp.join(self.scans_files_dir, 'patch_anno/patch_anno_16_9')
         for scan_id in self.scan_ids:
-            anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
-            self.obj_2D_annos_path[scan_id] = anno_2D_file
+            self.patch_anno[scan_id] = common.load_pkl_data(osp.join(self.patch_anno_folder, "{}.pkl".format(scan_id)))
         
         # load 3D scene graph information
         self.load3DSceneGraphs()
+        ## load obj_visual features
+        self.img_patch_feat_dim = self.cfg.sgaligner.model.img_patch_feat_dim
+        obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
+        self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
+        self.obj_topk = self.cfg.data.scene_graph.obj_topk
+        self.obj_img_patches_scan_tops = {}
+        for scan_id in self.all_scans_split:
+            obj_visual_file = osp.join(self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
+            self.obj_img_patches_scan_tops[scan_id] = common.load_pkl_data(obj_visual_file)
                 
         # set data augmentation
         self.use_aug = cfg.train.data_aug.use_aug
@@ -323,16 +338,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 obj_id = int(obj_item['id'])
                 obj_nyu_category = int(obj_item['nyu40'])
                 self.obj_3D_anno[scan_id][obj_id] = (scan_id, obj_id, obj_nyu_category)
-                
-        # load 3D obj image patch paths for each scan
-        self.img_patch_feat_dim = self.cfg.sgaligner.model.img_patch_feat_dim
-        obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
-        self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
-        self.obj_topk = self.cfg.data.scene_graph.obj_topk
-        self.obj_3D_img_patch_paths = {}
-        for scan_id in self.all_scans_split:
-            self.obj_3D_img_patch_paths[scan_id] = osp.join(
-                self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
 
     def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
         candidate_scans = []
@@ -437,14 +442,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             
         # 2D data
         frame_idx = data_item['frame_idx']
-        ## 2D patch anno
-        patch_h, patch_w = self.patch_h, self.patch_w
-        obj_2D_anno = common.load_pkl_data(self.obj_2D_annos_path[scan_id])[frame_idx]
-        obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
-                        interpolation=cv2.INTER_NEAREST) # type: ignore
-        if self.img_rotate:
-            obj_2D_anno = obj_2D_anno.transpose(1, 0)
-            obj_2D_anno = np.flip(obj_2D_anno, 1)
         
         ## 2D path features
         if self.use_2D_feature:
@@ -469,9 +466,13 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 img = augments_2D['image']
                 obj_2D_anno = augments_2D['mask']
                 img = self.brightness_2D(image=img)['image']
-        ## flatten 2D patch anno
-        obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.2)
-        obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
+                
+        ## patch anno
+        patch_anno_frame = self.patch_anno[scan_id][frame_idx]
+        if self.img_rotate:
+            patch_anno_frame = patch_anno_frame.transpose(1, 0)
+            patch_anno_frame = np.flip(patch_anno_frame, 1)
+        obj_2D_patch_anno_flatten = patch_anno_frame.reshape(-1)
             
         # frame info
         data_dict['scan_id'] = scan_id
@@ -671,7 +672,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 
                 obj_start_idx, obj_end_idx = obj_count_, obj_count_ + scene_graphs_['tot_obj_count'][scan_idx]
                 obj_ids = scene_graphs_['obj_ids'][obj_start_idx: obj_end_idx]
-                obj_img_patches_scan_tops = common.load_pkl_data(self.obj_3D_img_patch_paths[scan_id])
+                obj_img_patches_scan_tops = self.obj_img_patches_scan_tops[scan_id]
                 obj_img_patches_scan = obj_img_patches_scan_tops['obj_visual_emb']
                 obj_top_frames = obj_img_patches_scan_tops['obj_image_votes_topK']
                 

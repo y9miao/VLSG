@@ -8,7 +8,8 @@ import torch.utils.data as data
 import cv2
 from tqdm import tqdm
 import sys
-sys.path.append('..')
+ws_dir = "/home/yang/big_ssd/Scan3R/VLSG"
+sys.path.insert(0, ws_dir)
 
 from configs import config, update_config
 from utils import common, scan3r
@@ -50,8 +51,8 @@ class Scan3ROBJAssociator():
         # 2D image pObjectEmbeddingGeneratoratch annotation
         self.image_w = self.cfg.data.img.w
         self.image_h = self.cfg.data.img.h
-        self.image_patch_w = self.cfg.img_encoding.patch_w
-        self.image_patch_h = self.cfg.img_encoding.patch_h
+        self.image_patch_w = self.cfg.data.img_encoding.patch_w
+        self.image_patch_h = self.cfg.data.img_encoding.patch_h
         self.patch_w_size = self.image_w / self.image_patch_w
         self.patch_h_size = self.image_h / self.image_patch_h
         self.patch_anno_folder_name = "patch_anno_{}_{}".format(self.image_patch_w, self.image_patch_h)
@@ -62,7 +63,7 @@ class Scan3ROBJAssociator():
     def __len__(self):
         return len(self.anchor_data)
 
-    def annotate(self, scan_idx, step, th=0.5):
+    def annotate(self, scan_idx, step, th=0.2):
         # get related files
         scan_id = self.scan_ids[scan_idx]
         # get frame annotations
@@ -106,11 +107,12 @@ class Scan3ROBJAssociator():
             common.write_pkl_data(self.patch_annos_scans[scan_idx], patch_anno_file)
         
 if __name__ == '__main__':
-
-    data_root_dir = "/home/yang/big_ssd/Scan3R/3RScan"
-    cfg_file = "/home/yang/toolbox/ECCV2024/CodePlace/VLSG/configs/obj_match_scan3r.yaml"
     
-    cfg = update_config(config, cfg_file)
-    split = "train"
+    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
+    data_root_dir = "/home/yang/big_ssd/Scan3R/3RScan"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/gt_anno_2D/Test_SGAEI_Dino.yaml"
+    
+    cfg = update_config(config, cfg_file, ensure_dir = False)
+    split = "validation"
     scan3r_img_projector = Scan3ROBJAssociator(data_root_dir, split=split, cfg=cfg)
     scan3r_img_projector.annotate_scans()
