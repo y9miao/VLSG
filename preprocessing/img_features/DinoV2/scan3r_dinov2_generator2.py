@@ -197,7 +197,7 @@ class Scan3rDinov2Generator():
     def generateFeatures(self):
         img_num = 0
         self.feature_generation_time = 0.0
-        for scan_id in tqdm(self.scan_ids[3:]):
+        for scan_id in tqdm(self.scan_ids):
             with torch.no_grad():
                 imgs_features = self.generateFeaturesEachScan(scan_id)
             img_num += len(imgs_features)
@@ -214,7 +214,7 @@ def main():
     from configs import config, update_config
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/img_features/DinoV2/scan3r_dinov2_generator.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, 'test')
+    scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, 'train')
     scan3r_gcvit_generator.register_model()
     scan3r_gcvit_generator.generateFeatures()
     

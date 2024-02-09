@@ -86,9 +86,12 @@ class PatchSGIEAligner(nn.Module):
         
         # backbone 
         self.backbone = backbone
-        reduce_list = [gc_vit.ReduceSize(dim=backbone_dim, keep_dim=True)
-                            for i in range(num_reduce)]
-        self.reduce_layers = nn.Sequential(*reduce_list)
+        if num_reduce > 0:
+            reduce_list = [gc_vit.ReduceSize(dim=backbone_dim, keep_dim=True)
+                                for i in range(num_reduce)]
+            self.reduce_layers = nn.Sequential(*reduce_list)
+        else:
+            self.reduce_layers = EncodeChannelSize(backbone_dim, backbone_dim, norm_layer=nn.LayerNorm)
         
         # patch feature encoder
         self.img_transpose = img_transpose
@@ -257,3 +260,66 @@ class PatchSGIEAligner(nn.Module):
         object_embeddings = self.sg_encoder(scene_graph_dict)
             
         return object_embeddings['joint']
+
+class SE(nn.Module):
+    """
+    Squeeze and excitation block
+    """
+
+    def __init__(self,
+                 inp,
+                 oup,
+                 expansion=0.25):
+        """
+        Args:
+            inp: input features dimension.
+            oup: output features dimension.
+            expansion: expansion ratio.
+        """
+
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(oup, int(inp * expansion), bias=False),
+            nn.GELU(),
+            nn.Linear(int(inp * expansion), oup, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y
+
+class EncodeChannelSize(nn.Module):
+    def __init__(self,
+                 dim,
+                 dim_out,
+                 norm_layer=nn.LayerNorm):
+        """
+        Args:
+            dim: feature size dimension.
+            norm_layer: normalization layer.
+            keep_dim: bool argument for maintaining the resolution.
+        """
+
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1,
+                      groups=dim, bias=False),
+            nn.GELU(),
+            SE(dim, dim),
+            nn.Conv2d(dim, dim_out, 1, 1, 0, bias=False),
+        )
+        self.norm2 = norm_layer(dim_out)
+        self.norm1 = norm_layer(dim)
+
+    def forward(self, x):
+        x = x.contiguous()
+        x = self.norm1(x)
+        x = _to_channel_first(x)
+        x = x + self.conv(x)
+        x = _to_channel_last(x)
+        x = self.norm2(x)
+        return x

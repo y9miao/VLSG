@@ -153,9 +153,8 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             self.patch_h = self.image_patch_h
             self.patch_w = self.image_patch_w
         self.step = self.cfg.data.img.img_step
-        self.num_patch = self.image_patch_w * self.image_patch_h
-        self.patch_anno_folder_name = "patch_anno_{}_{}".format(self.image_patch_w, self.image_patch_h)
-        self.scans_2Dpatch_anno_dir = osp.join(self.scans_files_dir, "patch_anno", self.patch_anno_folder_name)
+        self.num_patch = self.patch_h * self.patch_w
+
         # scene_img_dir
         self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
         
@@ -207,34 +206,26 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id, self.step)
             
         # load 2D patch features if use pre-calculated feature
+        self.use_2D_feature = cfg.data.img_encoding.use_feature
+        self.preload_2D_feature = cfg.data.img_encoding.preload_feature
         self.patch_feature_folder = osp.join(self.scans_files_dir, self.cfg.data.img_encoding.feature_dir)
         self.patch_features = {}
-        if self.cfg.data.img_encoding.use_feature:
-            for scan_id in self.scan_ids:
-                self.patch_features[scan_id] = scan3r.load_patch_feature_scans(
-                    self.data_root_dir, self.patch_feature_folder, scan_id, self.step)
         self.patch_features_paths = {}
-        if self.cfg.data.img_encoding.record_feature:
-            common.ensure_dir(self.patch_feature_folder)
-            for scan_id in self.scan_ids:
-                self.patch_features_paths[scan_id] = scan3r.load_patch_feature_paths(
-                    self.data_root_dir, self.patch_feature_folder, scan_id, self.step)
+        if self.use_2D_feature:
+            if self.preload_2D_feature:
+                for scan_id in self.scan_ids:
+                    self.patch_features[scan_id] = scan3r.load_patch_feature_scans(
+                        self.data_root_dir, self.patch_feature_folder, scan_id, self.step)
+            else:
+                for scan_id in self.scan_ids:
+                    self.patch_features_paths[scan_id] = osp.join(self.patch_feature_folder, "{}.pkl".format(scan_id))
                 
-        # load 2D gt obj id annotation
-        if self.cfg.data.img_encoding.use_feature:
-            self.obj_2D_patch_anno = {}
-            for scan_id in self.scan_ids:
-                patch_anno_scan_file = osp.join(self.scans_2Dpatch_anno_dir, "{}.pkl".format(scan_id))
-                self.obj_2D_patch_anno[scan_id] = common.load_pkl_data(patch_anno_scan_file)
-        else:
-            self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
-            self.obj_2D_annos = {}
-            self.obj_2D_annos_path = {}
-            for scan_id in self.scan_ids:
-                anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
-                anno_2D = common.load_pkl_data(anno_2D_file)
-                anno_2D_step = {frame_idx: anno_2D[frame_idx] for frame_idx in anno_2D if int(frame_idx) % self.step == 0}
-                self.obj_2D_annos[scan_id] = anno_2D_step
+        # load 2D gt obj id annotation patch
+        self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
+        self.obj_2D_annos_path = {}
+        for scan_id in self.scan_ids:
+            anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
+            self.obj_2D_annos_path[scan_id] = anno_2D_file
         
         # load 3D scene graph information
         self.load3DSceneGraphs()
@@ -337,6 +328,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         self.img_patch_feat_dim = self.cfg.sgaligner.model.img_patch_feat_dim
         obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
         self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
+        self.obj_topk = self.cfg.data.scene_graph.obj_topk
         self.obj_3D_img_patch_paths = {}
         for scan_id in self.all_scans_split:
             self.obj_3D_img_patch_paths[scan_id] = osp.join(
@@ -417,8 +409,11 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             for frame_idx in image_paths:
                 data_item_dict = {}
                 # 2D info
-                if self.cfg.data.img_encoding.use_feature:
-                    data_item_dict['patch_features'] = self.patch_features[scan_id][frame_idx]
+                if self.use_2D_feature:
+                    if self.preload_2D_feature:
+                        data_item_dict['patch_features'] = self.patch_features[scan_id][frame_idx]
+                    else:
+                        data_item_dict['patch_features_path'] = self.patch_features_paths[scan_id]
                 else:
                     data_item_dict['img_path'] = image_paths[frame_idx]
                 data_item_dict['frame_idx'] = frame_idx
@@ -442,16 +437,23 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             
         # 2D data
         frame_idx = data_item['frame_idx']
-
+        ## 2D patch anno
+        patch_h, patch_w = self.patch_h, self.patch_w
+        obj_2D_anno = common.load_pkl_data(self.obj_2D_annos_path[scan_id])[frame_idx]
+        obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
+                        interpolation=cv2.INTER_NEAREST) # type: ignore
+        if self.img_rotate:
+            obj_2D_anno = obj_2D_anno.transpose(1, 0)
+            obj_2D_anno = np.flip(obj_2D_anno, 1)
+        
         ## 2D path features
-        if self.cfg.data.img_encoding.use_feature:
-            patch_features = data_item['patch_features']
-            
-            obj_2D_patch_anno = self.obj_2D_patch_anno[scan_id][frame_idx]
-            if self.img_rotate:
-                obj_2D_patch_anno = obj_2D_patch_anno.transpose(1, 0)
-                obj_2D_patch_anno = np.flip(obj_2D_patch_anno, 1)
-            obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1) 
+        if self.use_2D_feature:
+            if self.preload_2D_feature:
+                patch_features = data_item['patch_features']
+            else:
+                patch_features = common.load_pkl_data(data_item['patch_features_path'])[frame_idx]
+                if patch_features.ndim == 2:
+                    patch_features = patch_features.reshape(self.patch_h, self.patch_w , self.img_patch_feat_dim)
         else:
             # img data
             img_path = data_item['img_path']
@@ -461,30 +463,21 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             if self.img_rotate:
                 img = img.transpose(1, 0, 2)
                 img = np.flip(img, 1)
-
-            ## 2D gt obj anno
-            obj_2D_anno = self.obj_2D_annos[scan_id][frame_idx]
-            obj_2D_anno = cv2.resize(obj_2D_anno, (self.image_resize_w, self.image_resize_h),  # type: ignore
-                            interpolation=cv2.INTER_NEAREST) # type: ignore
-            if self.img_rotate:
-                obj_2D_anno = obj_2D_anno.transpose(1, 0)
-                obj_2D_anno = np.flip(obj_2D_anno, 1)
             ## 2D data augmentation
             if self.use_aug and self.split == 'train':
                 augments_2D = self.trans_2D(image=img, mask=obj_2D_anno)
                 img = augments_2D['image']
                 obj_2D_anno = augments_2D['mask']
                 img = self.brightness_2D(image=img)['image']
-            # 2D patch anno
-            patch_h, patch_w = self.patch_h, self.patch_w
-            obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.2)
-            obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
+        ## flatten 2D patch anno
+        obj_2D_patch_anno = getPatchAnno(obj_2D_anno, patch_w, patch_h, 0.2)
+        obj_2D_patch_anno_flatten = obj_2D_patch_anno.reshape(-1)
             
         # frame info
         data_dict['scan_id'] = scan_id
         data_dict['frame_idx'] = frame_idx
         data_dict['obj_2D_patch_anno_flatten'] = obj_2D_patch_anno_flatten
-        if self.cfg.data.img_encoding.use_feature:
+        if self.use_2D_feature:
             data_dict['patch_features'] = patch_features
         else:
             data_dict['image'] = img
@@ -628,7 +621,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             data_dict['scan_ids_temporal'] = np.stack([data['scan_id_temporal'] for data in batch])
         data_dict['frame_idxs'] = np.stack([data['frame_idx'] for data in batch])
         # 2D img info
-        if self.cfg.data.img_encoding.use_feature:
+        if self.use_2D_feature:
             patch_features_batch = np.stack([data['patch_features'] for data in batch]) # (B, P_H, P_W, D)
             data_dict['patch_features'] = torch.from_numpy(patch_features_batch).float() # (B, H, W, C)
         else:
@@ -678,18 +671,21 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 
                 obj_start_idx, obj_end_idx = obj_count_, obj_count_ + scene_graphs_['tot_obj_count'][scan_idx]
                 obj_ids = scene_graphs_['obj_ids'][obj_start_idx: obj_end_idx]
-                obj_img_patches_scan = common.load_pkl_data(self.obj_3D_img_patch_paths[scan_id])
-                obj_img_patches_scan = obj_img_patches_scan['obj_visual_emb']
+                obj_img_patches_scan_tops = common.load_pkl_data(self.obj_3D_img_patch_paths[scan_id])
+                obj_img_patches_scan = obj_img_patches_scan_tops['obj_visual_emb']
+                obj_top_frames = obj_img_patches_scan_tops['obj_image_votes_topK']
                 
                 obj_img_patches[scan_id] = {}
                 for obj_id in obj_ids:
-                    if obj_id not in obj_img_patches_scan:
+                    if obj_id not in obj_top_frames:
                         obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
                         obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
                         continue
                     
                     obj_img_patch_embs_list = []
-                    for frame_idx in obj_img_patches_scan[obj_id]:
+                    obj_frames = obj_top_frames[obj_id][:self.obj_topk] if len(obj_top_frames[obj_id]) >= self.obj_topk \
+                        else obj_top_frames[obj_id]
+                    for frame_idx in obj_frames:
                         if obj_img_patches_scan[obj_id][frame_idx] is not None:
                             embs_frame = obj_img_patches_scan[obj_id][frame_idx]
                             embs_frame = embs_frame.reshape(1, -1) if embs_frame.ndim == 1 else embs_frame
@@ -699,9 +695,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                         obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
                     else:
                         obj_img_patch_embs = np.concatenate(obj_img_patch_embs_list, axis=0)
-                        if obj_img_patch_embs.shape[0] > self.obj_patch_num:
-                            random_idx = np.random.choice(obj_img_patch_embs.shape[0], self.obj_patch_num, replace=False)
-                            obj_img_patch_embs = obj_img_patch_embs[random_idx, :]
                         
                     obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
                     
@@ -757,11 +750,10 @@ if __name__ == '__main__':
     sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
     from datasets.loaders import get_train_val_data_loader
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week10/tranval_Npair_SGAEI/Npair_cfg_SGAEI.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week11/Debug_SGAEI_Dino/Npair_cfg_SGAEI.yaml"
     cfg = update_config(config, cfg_file)
     train_dataloader, val_dataloader = get_train_val_data_loader(cfg, PatchObjectPairXTAESGIDataSet)
-    
-    pbar = tqdm.tqdm(enumerate(train_dataloader), total=len(train_dataloader))
+    pbar = tqdm.tqdm(enumerate(val_dataloader), total=len(val_dataloader))
     
     for iteration, data_dict in pbar:
         pass

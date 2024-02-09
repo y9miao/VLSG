@@ -27,6 +27,7 @@ _C.data.img_encoding.patch_w: 16 # number of patchs in width
 _C.data.img_encoding.patch_h: 9
 _C.data.img_encoding.record_feature = False
 _C.data.img_encoding.use_feature = False
+_C.data.img_encoding.preload_feature = False
 _C.data.img_encoding.feature_dir = ''
 
 _C.data.cross_scene = CN()
@@ -37,6 +38,7 @@ _C.data.cross_scene.num_negative_samples = 0 # -1 means
 _C.data.scene_graph = CN()
 _C.data.scene_graph.obj_img_patch = ""
 _C.data.scene_graph.obj_patch_num = 1
+_C.data.scene_graph.obj_topk = 1
 
 # model
 _C.model = CN()
