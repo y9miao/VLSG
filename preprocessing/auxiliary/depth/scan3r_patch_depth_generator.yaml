@@ -1,0 +1,60 @@
+data :
+  name            : Scan3R
+  root_dir        : '' # to be read in code from env varia  
+  rescan: True
+  resplit: True
+  log_dir: "./preprocessing/auxiliary/depth"
+  img:
+    img_step: 1
+    w: 960
+    h: 540
+  img_encoding:
+    # image patch config
+    resize_w: 224 # resize image for backbone GCVit
+    resize_h: 126
+    img_rotate: True # rotate w,h for backbone GCVit
+    patch_w: 16 # number of patchs in width
+    patch_h: 9
+  patch_anno: "patch_anno/patch_anno_16_9"
+model:
+  name: "patch_depth_16_9_scan"
+  version: "depth average of patches"
+
+# for sgaligner
+sgaligner:
+  use_pretrained : True
+  pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
+
+  label_file_name : labels.instances.annotated.v2.ply
+  pred_subfix     : inseg.ply
+
+  seed: 42
+  model_name    : 'DinoV2_'
+  modules       : ['point', 'gat', 'rel', 'attr']
+  use_predicted : False
+  registration  : False
+  scan_type     : 'scan'
+
+  preprocess :
+    pc_resolutions      : [64, 128, 256, 512]
+    subscenes_per_scene : 1
+    filter_segment_size : 512
+    min_obj_points      : 50
+    anchor_type_name    : '' 
+
+  model :
+    rel_dim             : 41
+    attr_dim            : 164
+    alignment_thresh    : 0.4
+
+  train :
+    pc_res: 512
+
+  val :
+    pc_res: 512
+    overlap_low         : 0.0
+    overlap_high        : 0.0
+    data_mode: orig
+
+mode: "val"
+split: "test"

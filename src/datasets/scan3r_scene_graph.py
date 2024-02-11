@@ -199,7 +199,7 @@ class SceneGraphPairDataset(data.Dataset):
             self.scan_ids = self.all_scans_split
         else:
             self.scan_ids = ref_scans_split
-            
+
         # load 2D image paths
         self.image_paths = {}
         for scan_id in self.scan_ids:
@@ -244,7 +244,19 @@ class SceneGraphPairDataset(data.Dataset):
         for scan_id in self.all_scans_split:
             obj_visual_file = osp.join(self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
             self.obj_img_patches_scan_tops[scan_id] = common.load_pkl_data(obj_visual_file)
-                
+        
+        # Auxilary data
+        ## 2D patch depth
+        if self.cfg.data.auxiliary.use_patch_depth:
+            self.depth_valid_th = self.cfg.data.auxiliary.depth_valid_th
+            
+            self.patch_depth = {}
+            depth_dir_name = self.cfg.data.auxiliary.depth_dir
+            patch_depth_folder = osp.join(self.scans_files_dir, depth_dir_name)
+            for scan_id in self.scan_ids:
+                depth_file = osp.join(patch_depth_folder, "{}.pkl".format(scan_id))
+                self.patch_depth[scan_id] = common.load_pkl_data(depth_file)
+        
         # set data augmentation
         self.use_aug = cfg.train.data_aug.use_aug
         ## 2D image
@@ -263,7 +275,6 @@ class SceneGraphPairDataset(data.Dataset):
         color_jitter = self.img_jitter
         self.brightness_2D = A.ColorJitter(
             brightness=color_jitter, contrast=color_jitter, saturation=color_jitter, hue=color_jitter)
-        
         ## 3D obj TODO
         self.elastic_distortion = ElasticDistortion(
             apply_distorsion=cfg.train.data_aug.use_aug_3D,
@@ -442,7 +453,6 @@ class SceneGraphPairDataset(data.Dataset):
             
         # 2D data
         frame_idx = data_item['frame_idx']
-        
         ## 2D path features
         if self.use_2D_feature:
             if self.preload_2D_feature:
@@ -465,14 +475,29 @@ class SceneGraphPairDataset(data.Dataset):
                 augments_2D = self.trans_2D(image=img, mask=obj_2D_anno)
                 img = augments_2D['image']
                 obj_2D_anno = augments_2D['mask']
-                img = self.brightness_2D(image=img)['image']
-                
+                img = self.brightness_2D(image=img)['image']  
         ## patch anno
         patch_anno_frame = self.patch_anno[scan_id][frame_idx]
         if self.img_rotate:
             patch_anno_frame = patch_anno_frame.transpose(1, 0)
             patch_anno_frame = np.flip(patch_anno_frame, 1)
         obj_2D_patch_anno_flatten = patch_anno_frame.reshape(-1)
+    
+        # auxilliary data
+        if self.cfg.data.auxiliary.use_patch_depth:
+            patch_position = self.patch_depth[scan_id][frame_idx]
+            ## get position differece between patches
+            patch_position_flatten = patch_position.reshape(-1, 3).astype(np.float32)
+            patch_valid_mask = patch_position_flatten[:, 2] > self.depth_valid_th
+            patch_position_diff = patch_position_flatten[:,None,:] - patch_position_flatten[None,:,:]
+            ## set valid mask
+            patch_pos_valid_mask = patch_valid_mask[:,None] & patch_valid_mask[None,:]
+            ### set diagonal to invalid
+            np.fill_diagonal(patch_pos_valid_mask, False)
+            
+            data_dict['patch_pos_diff'] = patch_position_diff
+            data_dict['patch_pos_valid_mask'] = patch_pos_valid_mask
+
             
         # frame info
         data_dict['scan_id'] = scan_id
@@ -632,6 +657,17 @@ class SceneGraphPairDataset(data.Dataset):
                 data_dict['patch_features_paths'] = [data['patch_features_path'] for data in batch]
         data_dict['obj_2D_patch_anno_flatten_list'] = \
             [ torch.from_numpy(data['obj_2D_patch_anno_flatten']) for data in batch] # B - [N_P]
+        # auxilliary data
+        ## patch edge indexes, currently fully connected
+        patch_edge_index = np.array([[i, j] for i in range(self.num_patch) for j in range(self.num_patch) if i != j])
+        data_dict['patch_edges'] = torch.from_numpy(patch_edge_index.T).long().contiguous()
+        if self.cfg.data.auxiliary.use_patch_depth:
+            patch_pos_diff_stack = np.stack([data['patch_pos_diff'] for data in batch]) # (B, N_P, N_P)
+            data_dict['patch_pos_diff'] = torch.from_numpy(patch_pos_diff_stack).float()
+            ## valid mask
+            patch_pos_valid_mask_stack = np.stack([data['patch_pos_valid_mask'] for data in batch]).astype(np.uint8) # (B, N_P, N_P)
+            data_dict['patch_pos_valid_mask'] = torch.from_numpy(patch_pos_valid_mask_stack).float()
+        
         # 3D scene graph info
         ## scene graph info
         ### include temporal scans 
@@ -749,12 +785,15 @@ class SceneGraphPairDataset(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
-    from datasets.loaders import get_train_val_data_loader
+    from datasets.loaders import get_train_val_data_loader, get_test_dataloader
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week11/Debug_SGAEI_Dino/Npair_cfg_SGAEI.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week11/Debug_PatchSceneGraphDepth/PatchSceneGraphDepth.yaml"
     cfg = update_config(config, cfg_file)
-    train_dataloader, val_dataloader = get_train_val_data_loader(cfg, SceneGraphPairDataset)
-    pbar = tqdm.tqdm(enumerate(val_dataloader), total=len(val_dataloader))
+    # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, SceneGraphPairDataset)
+    # pbar = tqdm.tqdm(enumerate(val_dataloader), total=len(val_dataloader))
+    
+    test_dataset, test_dataloader = get_test_dataloader(cfg, SceneGraphPairDataset)
+    pbar = tqdm.tqdm(enumerate(test_dataloader), total=len(test_dataloader))
     
     for iteration, data_dict in pbar:
         pass

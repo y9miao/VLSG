@@ -40,6 +40,10 @@ _C.data.scene_graph.obj_img_patch = ""
 _C.data.scene_graph.obj_patch_num = 1
 _C.data.scene_graph.obj_topk = 1
 
+_C.data.auxiliary = CN()
+_C.data.auxiliary.use_patch_depth = False
+_C.data.auxiliary.depth_dir = ''
+
 # model
 _C.model = CN()
 _C.model.backbone = CN()
