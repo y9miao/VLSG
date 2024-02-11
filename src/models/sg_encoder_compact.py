@@ -69,6 +69,20 @@ class Mlps(nn.Module):
         else:
             return self.mlp_layers(x)
     
+class MultiModalFusion(nn.Module):
+    def __init__(self, modal_num, with_weight=1):
+        super().__init__()
+        self.modal_num = modal_num
+        self.requires_grad = True if with_weight > 0 else False
+        self.weight = nn.Parameter(torch.ones((self.modal_num, 1)), requires_grad=self.requires_grad)
+
+    def forward(self, embs):
+        assert len(embs) == self.modal_num
+        weight_norm = F.softmax(self.weight, dim=0)
+        embs = [weight_norm[idx] * F.normalize(embs[idx]) for idx in range(self.modal_num) if embs[idx] is not None]
+        joint_emb = torch.cat(embs, dim=1)
+        return joint_emb
+    
 class MultiGAT(nn.Module):
     def __init__(self, n_units, n_gat_heads=[2, 2], dropout=0.0, use_edge_feat = False):
         super(MultiGAT, self).__init__()
@@ -142,6 +156,9 @@ class SceneGraphEncoder(nn.Module):
         # node_feat_dim = sum([self.encode_dims[module] for module in self.modules])
         # gate_gat_hidden_units = [node_feat_dim] + gat_hidden_units
         # self.gate = MultiGAT(gate_gat_hidden_units, n_gat_heads=gat_heads, dropout=dropout)
+        
+        # multi modal fusion
+        self.multi_modal_fusion = MultiModalFusion(len(self.modules))
             
         
     def forward(self, data_dict):
@@ -191,13 +208,15 @@ class SceneGraphEncoder(nn.Module):
                 raise NotImplementedError
         
         # concatenate all embeddings
-        node_embs = None
-        for module in self.modules:
-            modular_embs = embs[module]
-            node_embs = torch.cat([node_embs, modular_embs], dim=1) \
-                if node_embs is not None else modular_embs
-                
-        return node_embs
+        # node_embs = None
+        # for module in self.modules:
+        #     modular_embs = embs[module]
+        #     node_embs = torch.cat([node_embs, modular_embs], dim=1) \
+        #         if node_embs is not None else modular_embs
+        # return node_embs
+        
+        # fusion of multi-modal embeddings
+        joint_emb = self.multi_modal_fusion([embs[module] for module in self.modules])
                 
         # # formulate edges
         # cur_obj_num = 0
@@ -215,4 +234,4 @@ class SceneGraphEncoder(nn.Module):
         # # graph attention network
         # embs = self.gate(node_embs, edges)
         
-        # return embs
+        return joint_emb
