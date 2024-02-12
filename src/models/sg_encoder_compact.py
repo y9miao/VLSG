@@ -11,6 +11,7 @@ Copy-paste from torch.nn.Transformer with modifications:
     * decoder returns a stack of activations from all decoding layers
 """
 import copy
+from math import e
 from typing import Optional, List
 
 import torch
@@ -94,9 +95,10 @@ class MultiGAT(nn.Module):
         layer_stack = []
         # in_channels, out_channels, gat_heads
         for i in range(self.num_layers-1):
-            in_channels = n_units[i] * n_gat_heads[i-1] if i else n_units[i]
-            layer_stack.append(GATConv(in_channels=in_channels, out_channels=n_units[i+1], 
-                                       cached=False, gat_heads=n_gat_heads[i]))
+            in_channel = n_units[i] * n_gat_heads[i-1] if i else n_units[i]
+            out_channel = n_units[i+1]
+            layer_stack.append(GATConv(in_channels=in_channel, out_channels=out_channel, 
+                                       cached=False, heads=n_gat_heads[i]))
         self.layer_stack = nn.ModuleList(layer_stack)
         
     def forward(self, x, edges):
@@ -110,10 +112,10 @@ class MultiGAT(nn.Module):
     
 class SceneGraphEncoder(nn.Module):
     def __init__(self, modules, 
-                 in_dims = {'point': 3, 'attr': 100, 'img_patch': 1536},
-                 encode_depth = {'point':[256, 256], 'img_patch': [512, 256]},
-                 encode_dims = {'point': 128, 'attr': 128, 'img_patch': 256},
-                 gat_hidden_units=[256, 256], gat_heads = [2, 2],
+                 in_dims = {'point': 3, 'attr': 164, 'img_patch': 1536, 'rel': 41, 'gat': 3},
+                 encode_depth = {'point':[256, 256], 'attr': [128,128], 'img_patch': [512, 256], 'rel': [128, 128] },
+                 encode_dims = {'point': 128, 'attr': 128, 'img_patch': 256, 'rel': 128, 'gat': 128},
+                 gat_hidden_units=[128, 128], gat_heads = [2, 2],
                  dropout = 0.0,  use_transformer_aggregator=False):
         super(SceneGraphEncoder, self).__init__()
         self.modules = modules
@@ -141,6 +143,9 @@ class SceneGraphEncoder(nn.Module):
             attr_encode_dim = self.encode_dims['attr']
             self.attr_encoder = Mlps(in_features=attr_dim_in, hidden_features=encode_depth['attr'], out_features=attr_encode_dim)
             
+        if 'rel' in self.modules:
+            self.rel_encoder = Mlps(in_features=self.in_dims['rel'], hidden_features=encode_depth['rel'], 
+                                    out_features=self.encode_dims['rel'])
         
         if 'img_patch' in self.modules:
             # whether to use transformer_encoder
@@ -151,7 +156,11 @@ class SceneGraphEncoder(nn.Module):
             self.img_patch_encoder = Mlps(in_features=img_feat_input_dim, 
                         hidden_features=encode_depth['img_patch'], out_features=img_feat_encode_dim)
         
-        ## TODO add rel encoder and edge feature embedding
+        if 'gat' in self.modules:
+            self.structure_encoder = MultiGAT(n_units=[self.in_dims['gat']] +self.gat_hidden_units, 
+                                              n_gat_heads=self.gat_heads, dropout=self.dropout)
+            gat_out_dim = self.gat_hidden_units[-1] * self.gat_heads[-1]
+            self.structure_embedding = nn.Linear(gat_out_dim, self.encode_dims['gat'])
         
         # graph attention network
         # node_feat_dim = sum([self.encode_dims[module] for module in self.modules])
@@ -205,19 +214,44 @@ class SceneGraphEncoder(nn.Module):
 
                 img_patch_encode = self.img_patch_encoder(obs_img_patch_emb)
                 embs[module] = img_patch_encode
+                
+            elif module == 'rel':
+                rel_encode = self.rel_encoder(bow_vec_object_edge_feats)
+                embs[module] = rel_encode
+                
+            elif module == 'gat':
+                structure_embed = None
+                start_object_idx = 0
+                start_edge_idx = 0
+                for idx in range(batch_size):
+                    object_count = data_dict['graph_per_obj_count'][idx][0]
+                    edges_count = data_dict['graph_per_edge_count'][idx][0]
+                    
+                    objects_rel_pose = rel_pose[start_object_idx : start_object_idx + object_count]
+                    start_object_idx += object_count
+                    
+                    edges = torch.transpose(data_dict['edges'][start_edge_idx : start_edge_idx + edges_count], 0, 1).to(torch.int32)
+                    start_edge_idx += edges_count
+
+                    structure_embedding = self.structure_encoder(objects_rel_pose, edges)
+                    
+                    structure_embed = torch.cat([structure_embedding]) if structure_embed is None else \
+                                   torch.cat([structure_embed, structure_embedding]) 
+
+                embs[module] = self.structure_embedding(structure_embed)
             else:
                 raise NotImplementedError
         
         # concatenate all embeddings
-        # node_embs = None
-        # for module in self.modules:
-        #     modular_embs = embs[module]
-        #     node_embs = torch.cat([node_embs, modular_embs], dim=1) \
-        #         if node_embs is not None else modular_embs
-        # return node_embs
+        node_embs = None
+        for module in self.modules:
+            modular_embs = embs[module]
+            node_embs = torch.cat([node_embs, modular_embs], dim=1) \
+                if node_embs is not None else modular_embs
+        return node_embs
         
         # fusion of multi-modal embeddings
-        joint_emb = self.multi_modal_fusion([embs[module] for module in self.modules])
+        # joint_emb = self.multi_modal_fusion([embs[module] for module in self.modules])
                 
         # # formulate edges
         # cur_obj_num = 0
