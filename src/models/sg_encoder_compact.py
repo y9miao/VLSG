@@ -22,23 +22,78 @@ from torch import nn, Tensor
 from models.sgaligner.src.aligner.networks.pointnet import PointNetfeat
 from torch_geometric.nn import GATConv, GCNConv
 
+class Attention(nn.Module):
+    def __init__(self, d_model, heads=8, dim_head=64):
+        super().__init__()
+        inner_dim = dim_head * heads
+        self.heads = heads
+        self.logit_scale = nn.Parameter(torch.log(10 * torch.ones((heads, 1, 1))), requires_grad=True)
+
+        self.softmax = nn.Softmax(dim=-1)
+
+        self.to_qkv = nn.Linear(d_model, inner_dim * 3, bias=True)
+        self.to_out = nn.Linear(inner_dim, d_model, bias=False)
+
+    def forward(self, x):
+        B_, N, C = x.shape
+
+        qkv = self.to_qkv(x)
+        qkv = qkv.reshape(B_, N, 3, self.heads, -1).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
+
+        # scaled cosine attention
+        attn = (F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1))
+        logit_scale = torch.clamp(self.logit_scale,
+                                  max=torch.log(torch.tensor(1. / 0.01, device=self.logit_scale.device))).exp()
+        attn = attn * logit_scale
+        attn = self.softmax(attn)
+
+        out = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+        return self.to_out(out)
+
+
+class TransformerEncoderLayer(nn.Module):
+
+    def __init__(self, d_model: int, d_model_inner: int = 256, nhead: int = 2) -> None:
+        super().__init__()
+
+        self.map_in = nn.Linear(d_model, d_model_inner)
+        self.self_attn = Attention(d_model_inner, nhead, 64)
+        self.map_out = nn.Linear(d_model_inner, d_model)
+        self.norm1 = nn.LayerNorm(d_model_inner)
+
+
+    def forward(self, x):
+        # x: (B, N, d_model)
+        x_in = self.map_in(x)
+        x_attn = x_in + self.norm1(self.self_attn(x_in))
+        x_out = self.map_out(x_attn)
+        return x_out
+
+
 class PatchAggregator(nn.Module):
 
     def __init__(self, d_model, nhead, num_layers, dropout):
         super().__init__()
         # transformer encoders
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
-        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
+        # self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
+        # self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
         # Initialize the [CLS] token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        # self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        
+        self.transformer_encoder = TransformerEncoderLayer(d_model=d_model, d_model_inner=int(d_model/2), nhead=nhead)
 
     def forward(self, x):
+        # # x: (batch_size, num_patches, d_model)
+        # cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
+        # x = torch.cat((cls_tokens, x), dim=1)
+        # output = self.transformer_encoder(x)
+        # cls_token_output = output[:, 0, :]
+        # return cls_token_output
+        
         # x: (batch_size, num_patches, d_model)
-        cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
         output = self.transformer_encoder(x)
-        cls_token_output = output[:, 0, :]
-        return cls_token_output
+        return output
     
 class Mlps(nn.Module):
     def __init__(self, in_features, hidden_features=[], out_features=None, act_layer=nn.GELU, drop=0.):
@@ -152,9 +207,10 @@ class SceneGraphEncoder(nn.Module):
             self.use_transformer_aggregator = use_transformer_aggregator
             img_feat_input_dim = self.in_dims['img_patch']
             img_feat_encode_dim = self.encode_dims['img_patch']
-            self.multiview_encoder = PatchAggregator(d_model=img_feat_input_dim, nhead=2, num_layers=1, dropout=self.dropout)
             self.img_patch_encoder = Mlps(in_features=img_feat_input_dim, 
                         hidden_features=encode_depth['img_patch'], out_features=img_feat_encode_dim)
+            self.multiview_encoder = PatchAggregator(d_model=img_feat_encode_dim, nhead=2, num_layers=1, dropout=self.dropout)
+            self.multiview_norm = nn.LayerNorm(img_feat_encode_dim)
         
         if 'gat' in self.modules:
             self.structure_encoder = MultiGAT(n_units=[self.in_dims['gat']] +self.gat_hidden_units, 
@@ -202,18 +258,23 @@ class SceneGraphEncoder(nn.Module):
                     img_patch_feat_scan = data_dict['obj_img_patches'][scan_id]
                     for obj in obj_ids:
                         img_patches = img_patch_feat_scan[obj]
+                        img_patch_encode = self.img_patch_encoder(img_patches)
+                        
                         if self.use_transformer_aggregator:
-                            img_patches = img_patches.unsqueeze(0)
-                            img_patches_cls = self.multiview_encoder(img_patches)
-                            obs_img_patch_emb = torch.cat([img_patches_cls]) if obs_img_patch_emb is None else \
-                                        torch.cat([obs_img_patch_emb, img_patches_cls])
+                            # img_patches_attn = self.multiview_encoder(img_patch_encode.unsqueeze(0))
+                            # img_patches_attn = self.multiview_norm(img_patches_attn)
+                            # img_patches_attn = img_patches_attn.squeeze(0)
+                            img_multiview_encode = torch.mean(img_patch_encode, dim=0, keepdim=True)
+                            img_multiview_encode = img_multiview_encode
+                            obs_img_patch_emb = torch.cat([img_multiview_encode]) if obs_img_patch_emb is None else \
+                                        torch.cat([obs_img_patch_emb, img_multiview_encode])
                         else:
                             obs_img_patch_emb = torch.cat([img_patches]) if obs_img_patch_emb is None else \
                                         torch.cat([obs_img_patch_emb, img_patches])
                     start_object_idx += obj_count
 
-                img_patch_encode = self.img_patch_encoder(obs_img_patch_emb)
-                embs[module] = img_patch_encode
+                
+                embs[module] = obs_img_patch_emb
                 
             elif module == 'rel':
                 rel_encode = self.rel_encoder(bow_vec_object_edge_feats)
