@@ -50,7 +50,8 @@ class PatchSceneGraphAligner(nn.Module):
                  scene_graph_node_dim,
                  node_out_dim,
                  drop,
-                 use_temporal):
+                 use_temporal,
+                 multiview_transformer=False,):
         super().__init__()
         
         # backbone 
@@ -80,7 +81,7 @@ class PatchSceneGraphAligner(nn.Module):
                                             gat_hidden_units=gat_hidden_units,
                                             gat_heads = gat_heads,
                                             dropout = drop,
-                                            use_transformer_aggregator=False)
+                                            use_transformer_aggregator=multiview_transformer)
         self.sg_node_dim_match = nn.Linear(scene_graph_node_dim, node_out_dim)
         
         # use temporal information

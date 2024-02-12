@@ -787,7 +787,7 @@ if __name__ == '__main__':
     sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
     from datasets.loaders import get_train_val_data_loader, get_test_dataloader
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week11/Debug_PatchSceneGraphDepth/PatchSceneGraphDepth.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week11/Debug_PatchSceneGraph_ImageTransformer/Npair_cfg_SGAEI.yaml"
     cfg = update_config(config, cfg_file)
     # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, SceneGraphPairDataset)
     # pbar = tqdm.tqdm(enumerate(val_dataloader), total=len(val_dataloader))

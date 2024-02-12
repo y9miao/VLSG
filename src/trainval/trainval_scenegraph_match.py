@@ -109,6 +109,7 @@ class Trainer(EpochBasedTrainer):
         gat_heads = cfg.sg_encoder.model.gat_heads
         scene_graph_node_dim = cfg.sg_encoder.model.scene_graph_node_dim
         node_out_dim = cfg.sg_encoder.model.node_out_dim
+        multiview_transformer = cfg.sg_encoder.img_transformer
         
         use_temporal = cfg.train.loss.use_temporal
         drop = cfg.model.other.drop
@@ -128,7 +129,8 @@ class Trainer(EpochBasedTrainer):
                                 scene_graph_node_dim,
                                 node_out_dim,
                                 drop,
-                                use_temporal)
+                                use_temporal,
+                                multiview_transformer = multiview_transformer)
         
         # load snapshot if required
         if cfg.other.use_resume and os.path.isfile(cfg.other.resume):
