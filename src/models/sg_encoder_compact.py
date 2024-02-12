@@ -269,7 +269,7 @@ class SceneGraphEncoder(nn.Module):
                             obs_img_patch_emb = torch.cat([img_multiview_encode]) if obs_img_patch_emb is None else \
                                         torch.cat([obs_img_patch_emb, img_multiview_encode])
                         else:
-                            obs_img_patch_emb = torch.cat([img_patches]) if obs_img_patch_emb is None else \
+                            obs_img_patch_emb = torch.cat([img_patch_encode]) if obs_img_patch_emb is None else \
                                         torch.cat([obs_img_patch_emb, img_patches])
                     start_object_idx += obj_count
 
