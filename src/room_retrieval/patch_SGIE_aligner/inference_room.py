@@ -182,21 +182,24 @@ class RoomRetrivalScore():
         self.model.eval()
 
     def model_forward(self, data_dict):
-        assert self.cfg.data.img_encoding.use_feature != True, \
-            'To measure runtime, please dont use pre-calculated features.'
+        # assert self.cfg.data.img_encoding.use_feature != True, \
+        #     'To measure runtime, please dont use pre-calculated features.'
         
         # image features, image by image for fair time comparison
         batch_size = data_dict['batch_size']
-        images = data_dict['images'] # (B, H, W, C)
         forward_time = 0.
         patch_features_batch = None
         for i in range(batch_size):
-            image = images[i:i+1]
-            image = _to_channel_first(image)
             with torch.no_grad():
                 start_time = time.time()
-                features = self.model.backbone(image)[-1]
-                features = _to_channel_last(features)
+                if self.cfg.data.img_encoding.use_feature:
+                    features = data_dict['patch_features'][i:i+1]
+                else:
+                    images = data_dict['images'] # (B, H, W, C)
+                    image = images[i:i+1]
+                    image = _to_channel_first(image)
+                    features = self.model.backbone(image)[-1]
+                    features = _to_channel_last(features)
                 patch_features = self.model.reduce_layers(features)
                 patch_features = self.model.patch_encoder(patch_features)
                 forward_time += time.time() - start_time

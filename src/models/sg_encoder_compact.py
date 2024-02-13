@@ -171,7 +171,8 @@ class SceneGraphEncoder(nn.Module):
                  encode_depth = {'point':[256, 256], 'attr': [128,128], 'img_patch': [512, 256], 'rel': [128, 128] },
                  encode_dims = {'point': 128, 'attr': 128, 'img_patch': 256, 'rel': 128, 'gat': 128},
                  gat_hidden_units=[128, 128], gat_heads = [2, 2],
-                 dropout = 0.0,  use_transformer_aggregator=False):
+                 dropout = 0.0,  use_transformer_aggregator=False,
+                 multi_modal_fusion = True):
         super(SceneGraphEncoder, self).__init__()
         self.modules = modules
         self.in_dims = in_dims
@@ -224,6 +225,7 @@ class SceneGraphEncoder(nn.Module):
         # self.gate = MultiGAT(gate_gat_hidden_units, n_gat_heads=gat_heads, dropout=dropout)
         
         # multi modal fusion
+        self.use_multi_modal_fusion = multi_modal_fusion
         self.multi_modal_fusion = MultiModalFusion(len(self.modules))
             
         
@@ -303,16 +305,20 @@ class SceneGraphEncoder(nn.Module):
             else:
                 raise NotImplementedError
         
-        # concatenate all embeddings
-        node_embs = None
-        for module in self.modules:
-            modular_embs = embs[module]
-            node_embs = torch.cat([node_embs, modular_embs], dim=1) \
-                if node_embs is not None else modular_embs
-        return node_embs
+
         
         # fusion of multi-modal embeddings
-        # joint_emb = self.multi_modal_fusion([embs[module] for module in self.modules])
+        if self.use_multi_modal_fusion:
+            joint_emb = self.multi_modal_fusion([embs[module] for module in self.modules])
+            return joint_emb
+        else:
+            # concatenate all embeddings
+            node_embs = None
+            for module in self.modules:
+                modular_embs = embs[module]
+                node_embs = torch.cat([node_embs, modular_embs], dim=1) \
+                    if node_embs is not None else modular_embs
+            return node_embs
                 
         # # formulate edges
         # cur_obj_num = 0
@@ -329,5 +335,4 @@ class SceneGraphEncoder(nn.Module):
         # edges = torch.transpose(edges, 0, 1).to(torch.int32)
         # # graph attention network
         # embs = self.gate(node_embs, edges)
-        
-        return joint_emb
+        # return joint_emb
