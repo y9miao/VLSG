@@ -104,6 +104,7 @@ class RoomRetrivalScore():
         self.registerPatchObjectAlignerFromCfg(cfg)
         self.model.eval()
         self.loss_type = cfg.train.loss.loss_type
+        self.use_tf_idf = cfg.data.cross_scene.use_tf_idf
         
         # results
         self.val_room_retrieval_summary = SummaryBoard(adaptive=True)
@@ -238,12 +239,14 @@ class RoomRetrivalScore():
             assoc_data_dict = data_dict['assoc_data_dict'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict['candata_scan_obj_idxs']
+            reweight_matrix_scans = assoc_data_dict['reweight_matrix_scans']
             target_scan_id = data_dict['scan_ids'][batch_i]
             candidates_objs_embeds_scan = obj_3D_embeddings_norm[candidates_obj_sg_idxs]
             ## start room retrieval in cpu
             patch_features_cpu = patch_features.cpu()
             candata_scan_obj_idxs_cpu = torch_util.release_cuda_torch(candata_scan_obj_idxs)
             obj_3D_embeddings_norm_cpu_scan = torch_util.release_cuda_torch(candidates_objs_embeds_scan)
+            reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
             candidates_obj_embeds = {
                 candidate_scan_id: obj_3D_embeddings_norm_cpu_scan[candata_scan_obj_idxs_cpu[candidate_scan_id]] \
                 for candidate_scan_id in candata_scan_obj_idxs_cpu}
@@ -252,8 +255,16 @@ class RoomRetrivalScore():
             for candidate_scan_id in candidates_obj_embeds:
                 candidate_obj_embeds = candidates_obj_embeds[candidate_scan_id]
                 patch_obj_sim = patch_features_cpu_norm@candidate_obj_embeds.T
-                matched_candidate_obj_sim = torch.max(patch_obj_sim, dim=1)[0]
-                room_score_scans_NT[candidate_scan_id] = matched_candidate_obj_sim.sum().item()
+                if self.use_tf_idf:
+                    reweight_obj_matrixs = reweight_matrix_scans[candidate_scan_id] + 0.5
+                    matched_candidate_objs_idxs = patch_obj_sim.argmax(dim=1)
+                    matched_sim = patch_obj_sim.gather(1, matched_candidate_objs_idxs.unsqueeze(1)).squeeze(1)
+                    reweight_patch_obj_sim = matched_sim * reweight_obj_matrixs[matched_candidate_objs_idxs]
+                    score = reweight_patch_obj_sim.sum().item() / reweight_obj_matrixs.sum().item()
+                else:
+                    matched_candidate_obj_sim = torch.max(patch_obj_sim, dim=1)[0]
+                    score = matched_candidate_obj_sim.sum().item()
+                room_score_scans_NT[candidate_scan_id] = score
             room_sorted_by_scores_NT =  [item[0] for item in sorted(room_score_scans_NT.items(), key=lambda x: x[1], reverse=True)]
             for k in top_k_list:
                 if target_scan_id in room_sorted_by_scores_NT[:k]:
@@ -269,11 +280,13 @@ class RoomRetrivalScore():
             assoc_data_dict_temp = data_dict['assoc_data_dict_temp'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict_temp['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict_temp['candata_scan_obj_idxs']
+            reweight_matrix_scans = assoc_data_dict_temp['reweight_matrix_scans']
             target_scan_id = data_dict['scan_ids_temporal'][batch_i]
             candidates_objs_embeds_scan = obj_3D_embeddings_norm[candidates_obj_sg_idxs]
             ## start room retrieval in cpu
             candata_scan_obj_idxs_cpu = torch_util.release_cuda_torch(candata_scan_obj_idxs)
             obj_3D_embeddings_norm_cpu_scan = torch_util.release_cuda_torch(candidates_objs_embeds_scan)
+            reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
             candidates_obj_embeds = {
                 candidate_scan_id: obj_3D_embeddings_norm_cpu_scan[candata_scan_obj_idxs_cpu[candidate_scan_id]] \
                 for candidate_scan_id in candata_scan_obj_idxs_cpu}
@@ -281,8 +294,17 @@ class RoomRetrivalScore():
             for candidate_scan_id in candidates_obj_embeds:
                 candidate_obj_embeds = candidates_obj_embeds[candidate_scan_id]
                 patch_obj_sim = patch_features_cpu_norm@candidate_obj_embeds.T
-                matched_candidate_obj_sim = torch.max(patch_obj_sim, dim=1)[0]
-                room_score_scans_T[candidate_scan_id] = matched_candidate_obj_sim.sum().item()
+                if self.use_tf_idf:
+                    reweight_obj_matrixs = reweight_matrix_scans[candidate_scan_id]
+                    matched_candidate_objs_idxs = patch_obj_sim.argmax(dim=1)
+                    matched_sim = patch_obj_sim.gather(1, matched_candidate_objs_idxs.unsqueeze(1)).squeeze(1)
+                    reweight_patch_obj_sim = matched_sim * reweight_obj_matrixs[matched_candidate_objs_idxs]
+                    score = reweight_patch_obj_sim.sum().item() / reweight_obj_matrixs.sum().item()
+                else:
+                    matched_candidate_obj_sim = torch.max(patch_obj_sim, dim=1)[0]
+                    score = matched_candidate_obj_sim.sum().item()
+                room_score_scans_T[candidate_scan_id] = score
+
             room_sorted_by_scores = [item[0] for item in sorted(room_score_scans_T.items(), key=lambda x: x[1], reverse=True)]
             for k in top_k_list:
                 if target_scan_id in room_sorted_by_scores[:k]:

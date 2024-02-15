@@ -287,22 +287,13 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             self.pc_resolution = self.cfg.sgaligner.train.pc_res
         else:
             self.pc_resolution = self.cfg.sgaligner.val.pc_res
-            
-        rel_dim = self.cfg.sgaligner.model.rel_dim
-        if rel_dim == 41:
-            sg_filename = "data"
-        elif rel_dim == 9:
-            sg_filename = "data_rel9"
-        else:
-            raise ValueError("Invalid rel_dim")
-        
         self.scene_graphs = {}
         for scan_id in self.all_scans_split:
             # Centering
             points = scan3r.load_plydata_npy(osp.join(self.scans_scenes_dir, '{}/data.npy'.format(scan_id)), obj_ids = None)
             pcl_center = np.mean(points, axis=0)
             # scene graph info
-            scene_graph_dict = common.load_pkl_data(osp.join(self.scans_files_dir_mode, '{}/{}.pkl'.format(sg_filename, scan_id)))
+            scene_graph_dict = common.load_pkl_data(osp.join(self.scans_files_dir_mode, 'data/{}.pkl'.format(scan_id)))
             object_ids = scene_graph_dict['objects_id']
             global_object_ids = scene_graph_dict['objects_cat']
             edges = scene_graph_dict['edges']
@@ -313,7 +304,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             if not self.use_predicted:
                 bow_vec_obj_attr_feats = torch.from_numpy(scene_graph_dict['bow_vec_object_attr_feats'])
             else:
-                bow_vec_obj_attr_feats = torch.zeros(object_points.shape[0], rel_dim)
+                bow_vec_obj_attr_feats = torch.zeros(object_points.shape[0], 41)
             bow_vec_obj_edge_feats = torch.from_numpy(scene_graph_dict['bow_vec_object_edge_feats'])
             rel_pose = torch.from_numpy(scene_graph_dict['rel_trans'])
             # aggreate data 

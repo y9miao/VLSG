@@ -1,6 +1,5 @@
 import numpy as np
 import cv2
-import open3d.ml.torch as ml3d
 import torch
 from scipy.spatial.transform import Rotation
 from typing import Optional
@@ -92,6 +91,7 @@ def compute_pcl_overlap(source, target, threshold=1e-7):
     '''
     Compute overlap ratio from source point cloud to target point cloud
     '''
+    import open3d.ml.torch as ml3d
     points = torch.from_numpy(np.asarray(source)).to(torch.float64)
     queries = torch.from_numpy(np.asarray(target)).to(torch.float64)
     radii = torch.tensor([threshold]).tile(queries.size(0)).to(torch.float64)

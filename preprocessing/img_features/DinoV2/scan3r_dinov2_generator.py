@@ -5,7 +5,7 @@ import sys
 from tracemalloc import start
 from sklearn.utils import resample
 from yaml import scan
-vlsg_dir = "/home/yang/big_ssd/Scan3R/VLSG"
+vlsg_dir = osp.parent(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__)))))
 sys.path.insert(0, vlsg_dir)
 from utils import common, scan3r
 

@@ -31,6 +31,7 @@ data :
     use_cross_scene: True
     num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
+    use_tf_idf: True
   scene_graph:
     obj_img_patch: "Features3D/obj_dinov2_top5_l3"
     obj_patch_num: 60

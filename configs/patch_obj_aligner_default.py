@@ -34,6 +34,7 @@ _C.data.cross_scene = CN()
 _C.data.cross_scene.use_cross_scene = False
 _C.data.cross_scene.num_scenes = 0
 _C.data.cross_scene.num_negative_samples = 0 # -1 means 
+_C.data.cross_scene.use_tf_idf = False
 
 _C.data.scene_graph = CN()
 _C.data.scene_graph.obj_img_patch = ""

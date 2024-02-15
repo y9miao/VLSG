@@ -1,45 +1,21 @@
 import os 
 import os.path as osp
+from re import sub
+from sympy import root
 from tqdm import tqdm
 import numpy as np 
 from scipy.spatial import ConvexHull
 import argparse
 import random
-from utils import common, point_cloud, scan3r, open3d, visualisation
 import sys
-sys.path.append('.')
-
-from utils import define, common, point_cloud, label_mapping
+from yacs.config import CfgNode as CN
+ws_dir = osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__)))))
+sys.path.append(ws_dir)
+from utils import common, point_cloud, scan3r
 from configs import config, update_config
 
-REL2IDX_SCANNET8 = common.name2idx(osp.join(define.SCAN3R_ORIG_DIR, 'files/scannet8_relationships.txt'))
-REL2IDX_SCANNET41 = common.name2idx(osp.join(define.SCAN3R_ORIG_DIR, 'files/relationships.txt'))
-CLASS2IDX_SCANNET20 = common.name2idx(osp.join(define.SCAN3R_ORIG_DIR, 'files/scannet20_classes.txt'))
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', dest='config', default='', type=str, help='3R Scan configuration file name')
-    parser.add_argument('--split', dest='split', default='train', type=str, help='split to run subscan generation on')
-    parser.add_argument('--rescan', dest='rescan', default=False, action='store_true', help='get ref scan or rescan')
-    parser.add_argument('--remove_nodes', dest='remove_node', default=False,  action='store_true', help='randomly remove nodes from scene graph')      
-    parser.add_argument('--remove_edges', dest='remove_edge', default=False,  action='store_true', help='randomly remove edges from scene graph')   
-    parser.add_argument('--change_node_semantic', dest='change_node_semantic', default=False,  action='store_true', help='randomly change semantic labels of nodes')        
-    parser.add_argument('--change_edge_semantic', dest='change_edge_semantic', default=False,  action='store_true', help='randomly change semantic labels of edges')
-    
-    args = parser.parse_args()
-    if args.remove_node:
-        args.mode = 'node_removed'
-    if args.remove_edge:
-        args.mode = 'edge_removed'
-    if args.change_node_semantic:
-        args.mode = 'node_semantic_changed'
-    if args.change_edge_semantic:
-        args.mode = 'edge_semantic_changed'
-    else:
-        args.mode = 'orig'
 
-    return parser, args
-
-def process_scan(data_dir, rel_data, obj_data, args, cfg, rel2idx):
+def process_scan(data_dir, rel_data, obj_data, cfg, rel2idx, rel_transforms = None):
     scan_id = rel_data['scan']
 
     if len(rel_data['relationships']) == 0:
@@ -67,30 +43,12 @@ def process_scan(data_dir, rel_data, obj_data, args, cfg, rel2idx):
         object_points[pc_resolution] = []
 
     object_data = obj_data['objects'] 
-
-    if args.remove_node:
-        num_obj_to_keep = int(((100 - np.random.randint(15, 41)) / 100.0) * len(object_data))
-        keep_obj_indices = np.random.choice(len(object_data), num_obj_to_keep, replace=False)
-        object_data = [object_data[idx] for idx in keep_obj_indices]
-    
-    if args.change_node_semantic:
-        num_obj_to_change = int((np.random.randint(15, 41) / 100.0) * len(object_data))
-        change_obj_indices = np.random.choice(len(object_data), num_obj_to_change, replace=False)
-        orig_objects_ids = []
-
-        for idx, object in enumerate(object_data):
-            orig_objects_ids.append(int(object['id'])) 
     
     for idx, object in enumerate(object_data):
         if not cfg.use_predicted : attribute = [item for sublist in object['attributes'].values() for item in sublist]
 
         object_id = int(object['id'])
         object_id_for_pcl = int(object['id'])
-        
-        if args.change_node_semantic and idx in change_obj_indices:
-            object_id_for_pcl = np.random.choice(orig_objects_ids)
-            while object_id_for_pcl == int(object['id']):
-                object_id_for_pcl = np.random.choice(orig_objects_ids)
         
         global_object_id = int(object['global_id'])
         obj_pt_idx = np.where(ply_data['objectId'] == object_id)
@@ -128,34 +86,16 @@ def process_scan(data_dir, rel_data, obj_data, args, cfg, rel2idx):
     pairs = []
     edges_cat = []
 
-    if args.remove_edge:
-        num_rel_to_keep = int(((100 - np.random.randint(15, 41)) / 100.0) * len(relationships))
-        keep_indices = np.random.choice(len(relationships), num_rel_to_keep, replace=False)
-        relationships = [relationships[idx] for idx in keep_indices]
-
-    if args.change_edge_semantic:
-        num_rel_to_change = int((np.random.randint(15, 41) / 100.0) * len(relationships))
-        rel_change_indices = np.random.choice(len(relationships), num_rel_to_change, replace=False)
-        choose_from_rels = [rel for rel in list(rel2idx.keys()) if rel not in ['none', 'inside']]
-
     for idx, triple in enumerate(relationships):
         sub = int(triple[0])
         obj = int(triple[1])
         rel_id = int(triple[2])  
-        rel_name = triple[3]
+        rel_name = triple[3] if rel_transforms is not None else rel_transforms[triple[3]]
 
         if rel_name in list(rel2idx.keys()):
             rel_id = int(rel2idx[rel_name])
             
             if sub in objects_ids and obj in objects_ids:
-                if args.change_edge_semantic and idx in rel_change_indices:
-                    rel_name_changed = np.random.choice(choose_from_rels)
-                    while rel_name == rel_name_changed:
-                        rel_name_changed = np.random.choice(choose_from_rels)
-                    
-                    rel_name = rel_name_changed
-                    rel_id = rel2idx[rel_name]
-                
                 if rel_name == 'inside':
                     assert False
                 
@@ -166,12 +106,16 @@ def process_scan(data_dir, rel_data, obj_data, args, cfg, rel2idx):
                 if triple[:2] not in pairs:
                     pairs.append([sub, obj])
 
-    if len(pairs) == 0:
-        return -1
+    # if len(pairs) == 0:
+    #     return -1
 
     # Root Object - object with highest outgoing degree
     all_edge_objects_ids = np.array(pairs).flatten()
-    root_obj_id = np.argmax(np.bincount(all_edge_objects_ids))
+    if len(all_edge_objects_ids) == 0:
+        # randomly select a root object
+        root_obj_id = random.choice(objects_ids)
+    else:
+        root_obj_id = np.argmax(np.bincount(all_edge_objects_ids))
     root_obj_idx = object_id2idx[root_obj_id]
 
     # Calculate barry center and relative translation
@@ -217,8 +161,7 @@ def process_scan(data_dir, rel_data, obj_data, args, cfg, rel2idx):
     data_dict['root_obj_id'] = root_obj_id
     return data_dict
 
-def process_data(args, cfg, rel2idx):
-    mode = args.mode
+def process_data(cfg, rel2idx, rel_transforms = None, mode = 'orig', split = 'train', data_file = 'data'):
     use_predicted = cfg.use_predicted
     scan_type = cfg.scan_type
     anchor_type_name = cfg.preprocess.anchor_type_name
@@ -226,9 +169,9 @@ def process_data(args, cfg, rel2idx):
     out_dirname = osp.join(out_dirname, 'predicted') if use_predicted else out_dirname
     data_dir = osp.join(cfg.data.root_dir, out_dirname)
     data_write_dir = osp.join(data_dir, 'files', mode)
+    
     common.ensure_dir(data_write_dir)
-    common.ensure_dir(osp.join(data_write_dir, 'data'))
-    split = args.split
+    common.ensure_dir(osp.join(data_write_dir, data_file))
     
     print('[INFO] Processing subscans from {} split'.format(split))
     
@@ -242,36 +185,29 @@ def process_data(args, cfg, rel2idx):
     subscan_ids_generated = np.genfromtxt(osp.join(data_dir, 'files', scan_ids_filename), dtype=str)  
     subscan_ids_processed = []
     
-    if args.rescan:
-        subRescan_ids_generated = []
-        scans_dir = define.SCAN3R_ORIG_DIR
-        scans_files_dir = osp.join(scans_dir, 'files')
-        all_scan_data = common.load_json(osp.join(scans_files_dir, '3RScan.json'))
-        # get rescans
-        for scan_data in all_scan_data:
-            ref_scan_id = scan_data['reference']
-            if ref_scan_id in subscan_ids_generated:
-                rescan_ids = [scan['reference'] for scan in scan_data['scans']]
-                subRescan_ids_generated += rescan_ids
-        subscan_ids_generated = subRescan_ids_generated
+    subRescan_ids_generated = []
+    scans_dir = cfg.data.root_dir
+    scans_files_dir = osp.join(scans_dir, 'files')
+    all_scan_data = common.load_json(osp.join(scans_files_dir, '3RScan.json'))
+    # get rescans
+    for scan_data in all_scan_data:
+        ref_scan_id = scan_data['reference']
+        if ref_scan_id in subscan_ids_generated:
+            rescan_ids = [scan['reference'] for scan in scan_data['scans']]
+            subRescan_ids_generated += rescan_ids + [ref_scan_id]
+    subscan_ids_generated = subRescan_ids_generated
 
     for subscan_id in tqdm(subscan_ids_generated[:]):
         obj_data = [obj_data for obj_data in obj_json if obj_data['scan'] == subscan_id][0]
         rel_data = [rel_data for rel_data in rel_json if rel_data['scan'] == subscan_id][0]
-        data_dict = process_scan(data_dir, rel_data, obj_data, args, cfg, rel2idx)
+        data_dict = process_scan(data_dir, rel_data, obj_data, cfg, rel2idx, rel_transforms=rel_transforms)
         
         if type(data_dict) == int: continue
 
-        common.write_pkl_data(data_dict, osp.join(data_write_dir, 'data', data_dict['scan_id'] + '.pkl'))
+        common.write_pkl_data(data_dict, osp.join(data_write_dir, data_file, data_dict['scan_id'] + '.pkl'))
         subscan_ids_processed.append(subscan_id)
     
     subscan_ids = np.array(subscan_ids_processed) 
-
-    print('[INFO] Saving {} scan ids...'.format(split))
-    print(len(subscan_ids))
-    rescan_note = 're' if args.rescan else ''
-    save_scan_ids_file = '{}_{}scans.txt'.format(split, rescan_note) if scan_type == 'scan' else '{}_{}scans_subscenes.txt'.format(split, rescan_note)
-    np.savetxt(osp.join(data_write_dir, save_scan_ids_file), subscan_ids, fmt='%s')
 
     return data_dir, data_write_dir, mode, subscan_ids
 
@@ -286,10 +222,8 @@ def make_bow_vector(sentence, word_2_idx):
             vec[word_2_idx[word]]+=1
     return vec
 
-def calculate_bow_node_edge_feats(data_write_dir, rel2idx, scan_ids):
+def calculate_bow_node_edge_feats(data_write_dir, rel2idx, scan_ids, data_file):
     print('[INFO] Starting BOW Feature Calculation For Node Edge Features...')
-    # scan_ids = os.listdir(osp.join(data_write_dir, 'data'))
-    # scan_ids = sorted([scan_id[:-4] for scan_id in scan_ids])
     
     scan_ids = sorted([scan_id for scan_id in scan_ids])
 
@@ -302,7 +236,7 @@ def calculate_bow_node_edge_feats(data_write_dir, rel2idx, scan_ids):
     print('[INFO] Size of Node Edge Vocabulary - {}'.format(len(wordToIx)))
     print('[INFO] Generated Vocabulary, Calculating BOW Features...')
     for scan_id in scan_ids:
-        data_dict_filename = osp.join(data_write_dir, 'data', '{}.pkl'.format(scan_id))
+        data_dict_filename = osp.join(data_write_dir, data_file, '{}.pkl'.format(scan_id))
         data_dict = common.load_pkl_data(data_dict_filename)
         
         edge = data_dict['edges']
@@ -336,16 +270,12 @@ def calculate_bow_node_edge_feats(data_write_dir, rel2idx, scan_ids):
     
     print('[INFO] Completed BOW Feature Calculation For Node Edge Features.')
 
-def calculate_bow_node_attr_feats(data_write_dir, scan_ids):
+def calculate_bow_node_attr_feats(data_write_dir, scan_ids, data_file, word_2_ix):
     print('[INFO] Starting BOW Feature Calculation For Node Attribute Features...')
-    # scan_ids = os.listdir(osp.join(data_write_dir, 'data'))
-    # scan_ids = sorted([scan_id[:-4] for scan_id in scan_ids])
     
     scan_ids = sorted([scan_id for scan_id in scan_ids])
-    
-    word_2_ix = common.load_pkl_data(define.OBJ_ATTR_FILENAME)
     for scan_id in tqdm(scan_ids):
-        data_dict_filename = osp.join(data_write_dir, 'data', '{}.pkl'.format(scan_id))
+        data_dict_filename = osp.join(data_write_dir, data_file, '{}.pkl'.format(scan_id))
         data_dict = common.load_pkl_data(data_dict_filename)
         attributes = data_dict['object_attributes']
 
@@ -358,7 +288,7 @@ def calculate_bow_node_attr_feats(data_write_dir, scan_ids):
     print('[INFO] Generated Vocabulary, Calculating BOW Features...')
 
     for scan_id in scan_ids:
-        data_dict_filename = osp.join(data_write_dir, 'data', '{}.pkl'.format(scan_id))
+        data_dict_filename = osp.join(data_write_dir, data_file, '{}.pkl'.format(scan_id))
         data_dict = common.load_pkl_data(data_dict_filename)
         attributes = data_dict['object_attributes']
 
@@ -374,15 +304,41 @@ def calculate_bow_node_attr_feats(data_write_dir, scan_ids):
     print('[INFO] Completed BOW Feature Calculation For Node Attribute Features.')
 
 if __name__ == '__main__':
-    _, args = parse_args()
-    cfg = update_config(config, args.config, ensure_dir=False)
-    random.seed(cfg.seed)
-    # rel2idx = REL2IDX_SCANNET8
-    rel2idx = REL2IDX_SCANNET41
+    # _, args = parse_args()
+    # cfg = update_config(config, args.config, ensure_dir=False)
     
-    print('======== Scan3R preprocessing with Scene Graphs using config file : {} ========'.format(args.config))
-    data_dir, data_write_dir, mode, scan_ids = process_data(args, cfg, rel2idx)
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/sgaligner_encode/preprocess_scan_sgaligner.yaml"
+    cfg = CN()
+    cfg.defrost()
+    cfg.set_new_allowed(True)
+    cfg.merge_from_file(cfg_file)
+    random.seed(cfg.seed)
+    root_dir = cfg.data.root_dir
+    REL2IDX_SCANNET8 = common.name2idx(osp.join(root_dir, 'files/scannet8_relationships.txt'))
+    REL2IDX_SCANNET41 = common.name2idx(osp.join(root_dir, 'files/relationships.txt'))
+    CLASS2IDX_SCANNET20 = common.name2idx(osp.join(root_dir, 'files/scannet20_classes.txt'))
+    rel2idx_8 = REL2IDX_SCANNET8
+    rel2idx_41 = REL2IDX_SCANNET41
+    split = 'val'
+    
+    # whether use 8  rel or 40 rel
+    if cfg.model.rel_dim == 9:
+        rel2idx = rel2idx_8
+        rel_tran_file = osp.join(cfg.data.root_dir, 'files/rel41To9.pkl')
+        rel_transform = common.load_pkl_data(rel_tran_file)
+        data_file = 'data_rel9'
+    else:
+        rel2idx = rel2idx_41
+        rel_transform = None
+        data_file = 'data'
+    data_dir, data_write_dir, mode, scan_ids = process_data(cfg, rel2idx, rel_transform, split=split, data_file=data_file)
 
+    data_write_dir = osp.join(root_dir, 'files', 'orig')
     common.ensure_dir(data_write_dir)
-    if not cfg.use_predicted : calculate_bow_node_attr_feats(data_write_dir, scan_ids)
-    calculate_bow_node_edge_feats(data_write_dir, rel2idx, scan_ids)
+    # obj attributes
+    OBJ_ATTR_FILENAME = osp.join(root_dir, 'files', 'obj_attr.pkl')
+    word_2_ix = common.load_pkl_data(OBJ_ATTR_FILENAME)
+    if not cfg.use_predicted : calculate_bow_node_attr_feats(data_write_dir, 
+                                        scan_ids, data_file= data_file, word_2_ix = word_2_ix)
+    # relationships
+    calculate_bow_node_edge_feats(data_write_dir, rel2idx, scan_ids, data_file= data_file)

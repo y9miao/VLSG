@@ -1,0 +1,9 @@
+seed: 42
+
+data:
+  root_dir: "/home/yang/990Pro/scannet_seqs/data"
+  img_step: 50
+  resize_w: 448
+  resize_h: 336
+  feature_2D_name: "features_2D/dinov2"
+  inference_step: 50

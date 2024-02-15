@@ -1,0 +1,4 @@
+seed: 42
+
+data:
+  root_dir: "/home/yang/990Pro/scannet_seqs/data"
