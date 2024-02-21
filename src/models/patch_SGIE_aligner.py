@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from GCVit.models import gc_vit
 # 3D scene graph feature extractor
 from src.models.sg_encoder import MultiModalEncoder
+# model utils
+from model_utils import TransformerEncoder
 
 
 def _to_channel_last(x):
@@ -80,7 +82,9 @@ class PatchSGIEAligner(nn.Module):
                  attr_dim,
                  img_feat_dim, 
                  drop,
-                 use_temporal
+                 use_temporal,
+                 use_global_descriptor = False, 
+                 global_descriptor_dim = None
                  ):
         super().__init__()
         
@@ -107,6 +111,28 @@ class PatchSGIEAligner(nn.Module):
         
         # use temporal information
         self.use_temporal = use_temporal
+        # use global descriptor
+        self.use_global_descriptor = use_global_descriptor
+        
+        if self.use_global_descriptor:
+            self.global_desc_dim = global_descriptor_dim
+            self.patch_global_encoder = TransformerEncoder(
+                num_layers = 1, d_model_in = patch_encoder_dim, 
+                d_model_inner = 256, d_model_out = global_descriptor_dim,
+            )
+            self.obj_global_encoder = TransformerEncoder(
+                num_layers = 2, d_model_in = obj_encoder_dim, 
+                d_model_inner = 256, d_model_out = global_descriptor_dim,
+            )
+        
+    def calculate_similarity(self, obj_3D_embeddings_norm, patch_features_norm, 
+                             assoc_data_dict, obj_3D_embeddings_sim):
+        scan_objs_idx = assoc_data_dict['scans_sg_obj_idxs']
+        scans_obj_embeddings_norm = obj_3D_embeddings_norm[scan_objs_idx, :] # (N, C*)
+        patch_obj_sim = torch.mm(patch_features_norm, scans_obj_embeddings_norm.permute(1, 0)) # (P_H*P_W, N)
+        patch_patch_sim = torch.mm(patch_features_norm, patch_features_norm.permute(1, 0)) # (P_H*P_W, P_H*P_W)
+        obj_obj_sim = obj_3D_embeddings_sim[scan_objs_idx, :][:, scan_objs_idx] # (N, N)
+        return patch_obj_sim, patch_patch_sim, obj_obj_sim
         
     def forward(self, data_dict):
         # get data
@@ -172,15 +198,6 @@ class PatchSGIEAligner(nn.Module):
         embs['obj_obj_sim_temp'] = obj_obj_sim_temp_list
         return embs
     
-    def calculate_similarity(self, obj_3D_embeddings_norm, patch_features_norm, 
-                             assoc_data_dict, obj_3D_embeddings_sim):
-        scan_objs_idx = assoc_data_dict['scans_sg_obj_idxs']
-        scans_obj_embeddings_norm = obj_3D_embeddings_norm[scan_objs_idx, :] # (N, C*)
-        patch_obj_sim = torch.mm(patch_features_norm, scans_obj_embeddings_norm.permute(1, 0)) # (P_H*P_W, N)
-        patch_patch_sim = torch.mm(patch_features_norm, patch_features_norm.permute(1, 0)) # (P_H*P_W, P_H*P_W)
-        obj_obj_sim = obj_3D_embeddings_sim[scan_objs_idx, :][:, scan_objs_idx] # (N, N)
-        return patch_obj_sim, patch_patch_sim, obj_obj_sim
-    
     def forward_with_patch_features(self, data_dict):
         # get data
         patch_features = data_dict['patch_features'] # (B, P_H*2, P_W*2, C*)
@@ -196,7 +213,7 @@ class PatchSGIEAligner(nn.Module):
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
         ## as long as batch_size^2 < batch_size*num_candidates^2, it is faster to calculate similarity between objs and patches
         obj_3D_embeddings_sim = torch.mm(obj_3D_embeddings_norm, obj_3D_embeddings_norm.permute(1, 0)) # (O, O)
-         
+        
         # calculate similarity between patches and objs
         batch_size = data_dict['batch_size']
         
@@ -236,6 +253,13 @@ class PatchSGIEAligner(nn.Module):
         embs['patch_obj_sim_temp'] = patch_obj_sim_temp_list # B - [P_H*P_W, N]
         embs['patch_patch_sim_temp'] = patch_patch_sim_temp_list # B - [P_H*P_W, P_H*P_W]
         embs['obj_obj_sim_temp'] = obj_obj_sim_temp_list
+        
+        # global descriptor
+        if self.use_global_descriptor:
+            patch_global_descriptor, obj_global_descriptors = self.forward_global_descriptor(
+                patch_features, obj_3D_embeddings, data_dict)
+            embs['patch_global_descriptor'] = patch_global_descriptor
+            embs['obj_global_descriptors'] = obj_global_descriptors
         return embs
     
     def forward2DImage(self, data_dict):
@@ -261,6 +285,18 @@ class PatchSGIEAligner(nn.Module):
             
         return object_embeddings['joint']
 
+    def forward_global_descriptor(self, patch_features, obj_features, data_dict):
+        ## patch global descriptor
+        patch_global_descriptor = self.patch_global_encoder.forward_cls(patch_features) # (B C*)
+        ## obj global descriptor, do it for each scan due to different number of objects
+        obj_global_descriptors = {}
+        sg_obj_idxs = data_dict['sg_obj_idxs_tensor']
+        for scan_id, obj_idxs in sg_obj_idxs.items():
+            obj_features_scan = obj_features[obj_idxs, :].unsqueeze(0) # (1, N, C*)
+            obj_global_descriptor = self.obj_global_encoder.forward_cls(obj_features_scan)
+            obj_global_descriptors[scan_id] = obj_global_descriptor # (1, C*)
+        return patch_global_descriptor, obj_global_descriptors
+            
 class SE(nn.Module):
     """
     Squeeze and excitation block

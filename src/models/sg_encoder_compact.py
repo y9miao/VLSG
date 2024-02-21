@@ -22,54 +22,8 @@ from torch import nn, Tensor
 from models.sgaligner.src.aligner.networks.pointnet import PointNetfeat
 from torch_geometric.nn import GATConv, GCNConv
 
-class Attention(nn.Module):
-    def __init__(self, d_model, heads=8, dim_head=64):
-        super().__init__()
-        inner_dim = dim_head * heads
-        self.heads = heads
-        self.logit_scale = nn.Parameter(torch.log(10 * torch.ones((heads, 1, 1))), requires_grad=True)
-
-        self.softmax = nn.Softmax(dim=-1)
-
-        self.to_qkv = nn.Linear(d_model, inner_dim * 3, bias=True)
-        self.to_out = nn.Linear(inner_dim, d_model, bias=False)
-
-    def forward(self, x):
-        B_, N, C = x.shape
-
-        qkv = self.to_qkv(x)
-        qkv = qkv.reshape(B_, N, 3, self.heads, -1).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
-
-        # scaled cosine attention
-        attn = (F.normalize(q, dim=-1) @ F.normalize(k, dim=-1).transpose(-2, -1))
-        logit_scale = torch.clamp(self.logit_scale,
-                                  max=torch.log(torch.tensor(1. / 0.01, device=self.logit_scale.device))).exp()
-        attn = attn * logit_scale
-        attn = self.softmax(attn)
-
-        out = (attn @ v).transpose(1, 2).reshape(B_, N, C)
-        return self.to_out(out)
-
-
-class TransformerEncoderLayer(nn.Module):
-
-    def __init__(self, d_model: int, d_model_inner: int = 256, nhead: int = 2) -> None:
-        super().__init__()
-
-        self.map_in = nn.Linear(d_model, d_model_inner)
-        self.self_attn = Attention(d_model_inner, nhead, 64)
-        self.map_out = nn.Linear(d_model_inner, d_model)
-        self.norm1 = nn.LayerNorm(d_model_inner)
-
-
-    def forward(self, x):
-        # x: (B, N, d_model)
-        x_in = self.map_in(x)
-        x_attn = x_in + self.norm1(self.self_attn(x_in))
-        x_out = self.map_out(x_attn)
-        return x_out
-
+# model utils
+from model_utils import Attention, TransformerEncoderLayer
 
 class PatchAggregator(nn.Module):
 

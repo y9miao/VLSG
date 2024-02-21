@@ -63,6 +63,8 @@ _C.model.obj.embedding_hidden_dims = []
 _C.model.obj.encoder_dim = 256
 _C.model.other = CN()
 _C.model.other.drop = 0.0
+## global descriptor
+_C.model.global_descriptor_dim = 1024
 
 # for training
 _C.train = CN()
@@ -97,6 +99,11 @@ _C.train.loss.alpha = 0.5 # for contrastive loss
 _C.train.loss.temperature = 0.1
 _C.train.loss.margin = 0.1 # for triplet loss
 _C.train.loss.epsilon = 1e-8 
+### global descriptor loss
+_C.train.loss.use_global_descriptor = False
+_C.train.loss.global_loss_coef = 0.5
+_C.train.loss.global_desc_temp = 1.0
+
 ## vis
 _C.train.use_vis = False
 _C.train.vis_epoch_steps = 10000

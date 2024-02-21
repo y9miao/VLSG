@@ -1,6 +1,9 @@
+from operator import is_
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+from VLSG.src.models import loss
 
 def get_loss(cfg):
     loss_type = cfg.train.loss.loss_type
@@ -8,23 +11,35 @@ def get_loss(cfg):
         return ICLLossBothSidesSumOutLog(
             cfg.train.loss.use_temporal,
             cfg.train.loss.temperature, 
-            cfg.train.loss.alpha
+            cfg.train.loss.alpha,
+            cfg.train.loss.use_global_descriptor,
+            cfg.train.loss.global_loss_coef,
+            cfg.train.loss.global_desc_temp
             )
     else:
         raise ValueError('Unknown loss type: {}'.format(loss_type))
     
-
 def get_val_room_retr_loss(cfg):
     return ValidationRoomRetrievalLoss(cfg)
 
-
 class ICLLossBothSidesSumOutLog(nn.Module):
-    def __init__(self, use_temporal, temperature=0.1, alpha = 0.5, epsilon=1e-8):
+    def __init__(self, 
+                 use_temporal, 
+                 temperature=0.1, 
+                 alpha = 0.5, 
+                 epsilon=1e-8,
+                 use_global_descriptor=False,
+                 global_loss_coef=0.5,
+                 global_desc_temp = 0.5
+                 ):
         super(ICLLossBothSidesSumOutLog, self).__init__()
         self.use_temporal = use_temporal
         self.temp = temperature
         self.alpha = alpha
         self.epsilon = epsilon
+        self.use_global_descriptor = use_global_descriptor
+        self.global_loss_coef = global_loss_coef
+        self.global_desc_temp = global_desc_temp
     
     @staticmethod
     def calculate_loss(epsilon, temp, alpha, 
@@ -57,7 +72,6 @@ class ICLLossBothSidesSumOutLog(nn.Module):
         if e1i_valid.any():
             loss = -torch.log(loss_patch_side[e1i_valid] + epsilon) * alpha + \
                 -torch.log(loss_obj_side[e1i_valid] + epsilon) * (1 - alpha)
-
             matched_obj_idxs = torch.argmax(patch_obj_sim, dim=1).reshape(-1,1) # (N_P)
             matched_obj_labels = e1i_matrix.gather(1, matched_obj_idxs) # (N_P, 1)
             matched_obj_labels = matched_obj_labels.squeeze(1) # (N_P)
@@ -97,6 +111,47 @@ class ICLLossBothSidesSumOutLog(nn.Module):
         else:
             return None, None
     
+    def forward_global_match_item(self, embs, data_dict, key=''):
+        loss_batch, loc_sucess_batch = None, None
+        patch_global_descriptors = embs['patch_global_descriptor']
+        obj_global_descriptors = embs['obj_global_descriptors']
+        assoc_data_dicts = data_dict['assoc_data_dict{}'.format(key)]
+        
+        target_scan_ids = data_dict['scan_ids{}'.format(key)]
+        for batch_i in range(data_dict['batch_size']):
+            patch_global_desc = patch_global_descriptors[batch_i] # (D)
+            target_scan_id = target_scan_ids[batch_i]
+            assoc_data_dict = assoc_data_dicts[batch_i]
+            
+            candidate_scan_ids = assoc_data_dict['candata_scan_obj_idxs'].keys()
+            sum_cos_sim = None
+            cos_sim_scans = {}
+            max_cos_sim = None
+            for candidate_scan_id in candidate_scan_ids:
+                scan_global_descri = obj_global_descriptors[candidate_scan_id].squeeze(0) # (D)
+                cos_sim = F.cosine_similarity(patch_global_desc, scan_global_descri, dim=0)
+                cos_sim = torch.exp(cos_sim / self.global_desc_temp)
+                
+                sum_cos_sim = cos_sim if sum_cos_sim is None else sum_cos_sim + cos_sim
+                cos_sim_scans[candidate_scan_id] = cos_sim
+                if max_cos_sim is None:
+                    max_cos_sim = cos_sim
+                else:   
+                    max_cos_sim = max(max_cos_sim, cos_sim)
+                
+            cos_sim_target_scan = cos_sim_scans[target_scan_id]
+            loss = -torch.log(cos_sim_target_scan / sum_cos_sim + self.epsilon)
+            
+            # get scan_id with max cos sim
+            scan_id_max_cos_sim = max(cos_sim_scans, key=cos_sim_scans.get)
+            if (target_scan_id == scan_id_max_cos_sim):
+                is_success = torch.Tensor([1]).to(loss.device)
+            else:
+                is_success = torch.Tensor([0]).to(loss.device)
+            loss_batch = loss if loss_batch is None else torch.cat([loss_batch, loss])
+            loc_sucess_batch = is_success if loc_sucess_batch is None else torch.cat([loc_sucess_batch, is_success])
+        return loss_batch, loc_sucess_batch
+            
     def forward(self, embs, data_dict):
         # calculate patch loss for each batch
         batch_size = data_dict['batch_size']
@@ -126,14 +181,13 @@ class ICLLossBothSidesSumOutLog(nn.Module):
                     matched_success_batch_T = matched_success_batch if matched_success_batch_T is None \
                         else torch.cat([matched_success_batch_T, matched_success_batch])
         
-        # calculate loss
+        # calculate loss for patch object match
         loss_dict = {}
         if not self.use_temporal:
             loss_dict['loss'] = loss_batch_NT.mean() if loss_batch_NT is not None \
                 else torch.tensor([0.]).to(loss_batch_NT.device)
             loss_dict['matched_success_ratio'] = matched_success_batch_NT.mean() if matched_success_batch_NT is not None \
                 else torch.tensor([0.]).to(loss_batch_NT.device)
-            return loss_dict
         else:
             loss_dict['loss'] = (loss_batch_NT.mean() + loss_batch_T.mean()) / 2 if loss_batch_NT is not None \
                 else torch.tensor([0.]).to(loss_batch_NT.device)
@@ -145,7 +199,20 @@ class ICLLossBothSidesSumOutLog(nn.Module):
                 else torch.tensor([0.]).to(loss_batch_NT.device)
             loss_dict['matched_success_ratio_T'] = matched_success_batch_T.mean() if matched_success_batch_T is not None \
                 else torch.tensor([0.]).to(loss_batch_NT.device)
-            return loss_dict
+        
+        # calculate loss for global match
+        if self.use_global_descriptor:
+            loss_batch_global_NT, sucess_global_batch_NT = self.forward_global_match_item(embs, data_dict)
+            if self.use_temporal:
+                loss_batch_global_T, sucess_global_batch_T = self.forward_global_match_item(embs, data_dict, key='_temp')
+                loss_dict['loss_global'] = (loss_batch_global_NT.mean() + loss_batch_global_T.mean()) / 2
+                loss_dict['success_ratio_global'] = (sucess_global_batch_NT.mean() + sucess_global_batch_T.mean()) / 2
+            else:
+                loss_dict['loss_global'] = loss_batch_global_NT.mean()
+                loss_dict['success_ratio_global'] = sucess_global_batch_NT.mean()
+            loss_dict['loss'] += self.global_loss_coef * loss_dict['loss_global']
+             
+        return loss_dict
     
 class ValidationRoomRetrievalLoss(nn.Module):
     def __init__(self, cfg):
@@ -181,7 +248,7 @@ class ValidationRoomRetrievalLoss(nn.Module):
             # dataitem info
             scan_id = data_dict['scan_ids'][batch_i]
             target_scan_id = data_dict['scan_ids'][batch_i] if key == '' \
-                else data_dict['scan_ids_temporal'][batch_i]
+                else data_dict['scan_ids_temp'][batch_i]
             assoc_data_dict = data_dict['assoc_data_dict{}'.format(key)][batch_i]
             # candidate info
             candata_scan_obj_idxs = assoc_data_dict['candata_scan_obj_idxs']

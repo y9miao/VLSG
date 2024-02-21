@@ -100,6 +100,7 @@ class Trainer(EpochBasedTrainer):
         # backbone = build_backbone(backbone_cfg.model['backbone'])
         
         # get patch object aligner
+        drop = cfg.model.other.drop
         ## 2Dbackbone
         num_reduce = cfg.model.backbone.num_reduce
         backbone_dim = cfg.model.backbone.backbone_dim
@@ -115,8 +116,11 @@ class Trainer(EpochBasedTrainer):
         obj_embedding_dim = cfg.model.obj.embedding_dim
         obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
         obj_encoder_dim = cfg.model.obj.encoder_dim
-        
-        drop = cfg.model.other.drop
+        ## temporal 
+        self.use_temporal = cfg.train.loss.use_temporal
+        ## global descriptor
+        self.use_global_descriptor = cfg.train.loss.use_global_descriptor
+        self.global_descriptor_dim = cfg.model.global_descriptor_dim
         
         self.model = PatchSGIEAligner(backbone,
                                 num_reduce,
@@ -132,7 +136,9 @@ class Trainer(EpochBasedTrainer):
                                 attr_dim,
                                 img_patch_feat_dim,
                                 drop,
-                                cfg.train.loss.use_temporal)
+                                self.use_temporal,
+                                self.use_global_descriptor,
+                                self.global_descriptor_dim)
         
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained:

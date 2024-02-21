@@ -218,7 +218,7 @@ class ValidationRoomRetrievalLoss(nn.Module):
             # dataitem info
             scan_id = data_dict['scan_ids'][batch_i]
             target_scan_id = data_dict['scan_ids'][batch_i] if key == '' \
-                else data_dict['scan_ids_temporal'][batch_i]
+                else data_dict['scan_ids_temp'][batch_i]
             assoc_data_dict = data_dict['assoc_data_dict{}'.format(key)][batch_i]
             # candidate info
             candata_scan_obj_idxs = assoc_data_dict['candata_scan_obj_idxs']

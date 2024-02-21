@@ -684,7 +684,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         # frame info 
         data_dict['scan_ids'] = np.stack([data['scan_id'] for data in batch])
         if self.temporal:
-            data_dict['scan_ids_temporal'] = np.stack([data['scan_id_temporal'] for data in batch])
+            data_dict['scan_ids_temp'] = np.stack([data['scan_id_temporal'] for data in batch])
         data_dict['frame_idxs'] = np.stack([data['frame_idx'] for data in batch])
         # 2D img info
         if self.use_2D_feature:

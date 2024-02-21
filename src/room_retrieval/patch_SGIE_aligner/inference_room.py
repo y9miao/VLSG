@@ -313,7 +313,7 @@ class RoomRetrivalScore():
                 """
                 n_scenes_per_sem = assoc_data_dict_temp['n_scenes_per_sem'] # ni
                 n_scenes = len(candata_scan_obj_idxs) #  N
-            target_scan_id = data_dict['scan_ids_temporal'][batch_i]
+            target_scan_id = data_dict['scan_ids_temp'][batch_i]
             candidates_objs_embeds_scan = obj_3D_embeddings_norm[candidates_obj_sg_idxs]
             ## start room retrieval in cpu
             candata_scan_obj_idxs_cpu = torch_util.release_cuda_torch(candata_scan_obj_idxs)
@@ -373,7 +373,7 @@ class RoomRetrivalScore():
             frame_idx = data_dict['frame_idxs'][batch_i]
             frame_retrieval = {
                 'frame_idx': frame_idx,
-                'temporal_scan_id': data_dict['scan_ids_temporal'][batch_i],
+                'temporal_scan_id': data_dict['scan_ids_temp'][batch_i],
                 'matched_obj_obj_ids': matched_obj_obj_ids,
                 'matched_obj_idx_temp': matched_obj_idx_temp,
                 'gt_anno': data_dict['obj_2D_patch_anno_flatten_list'][batch_i],
