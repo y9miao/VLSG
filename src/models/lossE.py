@@ -201,16 +201,17 @@ class ICLLossBothSidesSumOutLog(nn.Module):
                 else torch.tensor([0.]).to(loss_batch_NT.device)
         
         # calculate loss for global match
-        if self.use_global_descriptor:
-            loss_batch_global_NT, sucess_global_batch_NT = self.forward_global_match_item(embs, data_dict)
-            if self.use_temporal:
-                loss_batch_global_T, sucess_global_batch_T = self.forward_global_match_item(embs, data_dict, key='_temp')
-                loss_dict['loss_global'] = (loss_batch_global_NT.mean() + loss_batch_global_T.mean()) / 2
-                loss_dict['success_ratio_global'] = (sucess_global_batch_NT.mean() + sucess_global_batch_T.mean()) / 2
-            else:
-                loss_dict['loss_global'] = loss_batch_global_NT.mean()
-                loss_dict['success_ratio_global'] = sucess_global_batch_NT.mean()
-            loss_dict['loss'] += self.global_loss_coef * loss_dict['loss_global']
+        with torch.no_grad():
+            if self.use_global_descriptor:
+                loss_batch_global_NT, sucess_global_batch_NT = self.forward_global_match_item(embs, data_dict)
+                if self.use_temporal:
+                    loss_batch_global_T, sucess_global_batch_T = self.forward_global_match_item(embs, data_dict, key='_temp')
+                    loss_dict['loss_global'] = (loss_batch_global_NT.mean() + loss_batch_global_T.mean()) / 2
+                    loss_dict['success_ratio_global'] = (sucess_global_batch_NT.mean() + sucess_global_batch_T.mean()) / 2
+                else:
+                    loss_dict['loss_global'] = loss_batch_global_NT.mean()
+                    loss_dict['success_ratio_global'] = sucess_global_batch_NT.mean()
+                loss_dict['loss'] += self.global_loss_coef * loss_dict['loss_global']
              
         return loss_dict
     

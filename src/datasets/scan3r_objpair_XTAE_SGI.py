@@ -779,8 +779,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             scan_id = scan_id[0]
             sg_obj_idxs[scan_id] = {}
             objs_count = scene_graphs_['tot_obj_count'][scan_idx]
+            # sg_obj_idxs_tensor[scan_id] = torch.from_numpy(
+            #      scene_graphs_['obj_ids'][sg_obj_idx_start: sg_obj_idx_start+objs_count]).long()
             sg_obj_idxs_tensor[scan_id] = torch.from_numpy(
-                 scene_graphs_['obj_ids'][sg_obj_idx_start: sg_obj_idx_start+objs_count]).long()
+                 np.arange(sg_obj_idx_start, sg_obj_idx_start+objs_count)).long()
             for sg_obj_idx in range(sg_obj_idx_start, sg_obj_idx_start+objs_count):
                 obj_id = scene_graphs_['obj_ids'][sg_obj_idx]
                 sg_obj_idxs[scan_id][obj_id] = sg_obj_idx

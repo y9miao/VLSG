@@ -206,9 +206,12 @@ class PatchSGIEAligner(nn.Module):
         patch_features = self.reduce_layers(patch_features) 
         patch_features = self.patch_encoder(patch_features) # (B, P_H, P_W, C*)
         patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
+        patch_features_norm = F.normalize(patch_features, dim=-1)
         
         # sg encoding
         obj_3D_embeddings = self.forward_scene_graph(data_dict)  # (O, C*)
+        if obj_3D_embeddings.isnan().any():
+            print('obj_3D_embeddings has nan')
         obj_3D_embeddings = self.obj_embedding_encoder(obj_3D_embeddings) # (O, C*)
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
         ## as long as batch_size^2 < batch_size*num_candidates^2, it is faster to calculate similarity between objs and patches
@@ -227,8 +230,7 @@ class PatchSGIEAligner(nn.Module):
         for batch_i in range(batch_size):
             # calculate similarity between patches and objs
             # patch features per batch
-            patch_features_pb = patch_features[batch_i] # (P_H*P_W, C*)
-            patch_features_pb_norm = F.normalize(patch_features_pb, dim=-1)
+            patch_features_pb_norm = patch_features_norm[batch_i] # (P_H*P_W, C*)
             assoc_data_dict = data_dict['assoc_data_dict'][batch_i]
             patch_obj_sim, patch_patch_sim, obj_obj_sim = self.calculate_similarity(
                 obj_3D_embeddings_norm, patch_features_pb_norm, assoc_data_dict, obj_3D_embeddings_sim)
@@ -257,7 +259,7 @@ class PatchSGIEAligner(nn.Module):
         # global descriptor
         if self.use_global_descriptor:
             patch_global_descriptor, obj_global_descriptors = self.forward_global_descriptor(
-                patch_features, obj_3D_embeddings, data_dict)
+                patch_features_norm, obj_3D_embeddings_norm, data_dict)
             embs['patch_global_descriptor'] = patch_global_descriptor
             embs['obj_global_descriptors'] = obj_global_descriptors
         return embs
