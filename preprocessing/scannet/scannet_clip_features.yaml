@@ -1,0 +1,13 @@
+seed: 42
+
+data:
+  root_dir: "/home/yang/990Pro/scannet_seqs/data"
+  img_step: 25
+  resize_w: 448
+  resize_h: 336
+  feature_2D_name: "features_2D/clip_ViT_L_14"
+  inference_step: 25
+
+model:
+  name: clip_ViT_L_14
+  version: "ViT-L/14"

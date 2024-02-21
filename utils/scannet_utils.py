@@ -8,7 +8,21 @@ from copy import deepcopy
 import cv2
 import pickle
 from utils import common, scan3r, point_cloud, define
-import os
+import scipy, torch
+import os, threading, queue, subprocess
+import random
+
+def isPoseValid(pose):
+    is_nan = np.isnan(pose).any() or np.isinf(pose).any()
+    if is_nan:
+        return False
+    R_matrix = pose[:3, :3]
+    I = np.identity(3)
+    is_rotation_valid = ( np.isclose( np.matmul(R_matrix, R_matrix.T), I , atol=1e-3) ).all \
+        and np.isclose(np.linalg.det(R_matrix) , 1, atol=1e-3)
+    if not is_rotation_valid:
+        return False
+    return True
 
 def load_frame_idxs(data_split_dir, scan_id, skip=None):
     num_frames = len(glob(osp.join(data_split_dir, scan_id, 'color', '*.jpg')))
@@ -29,11 +43,47 @@ def load_frame_paths(data_split_dir, scan_id, skip=None):
         img_paths[frame_idx] = img_path
     return img_paths
 
+def load_mesh_path(data_split_dir, scan_id, mesh_name):
+    mesh_folder = osp.join(data_split_dir, scan_id)
+    mesh_path = osp.join(mesh_folder, mesh_name)
+    return mesh_path
+
+def load_frame_poses(data_split_dir, scan_id, skip=None):
+    frame_idxs = load_frame_idxs(data_split_dir, scan_id, skip)
+    pose_folder = osp.join(data_split_dir, scan_id, 'pose')
+    poses_W_C = {}
+    for frame_idx in frame_idxs:
+        pose_file = osp.join(pose_folder, "{}.txt".format(frame_idx))
+        pose = np.loadtxt(pose_file)
+        if not isPoseValid(pose):
+            continue
+        poses_W_C[frame_idx] = pose
+    return poses_W_C
+
+def load_frame_intrinsics(data_split_dir, scan_id, sensor = 'color'):
+    if sensor == 'color':
+        intrinsic_file = osp.join(data_split_dir, scan_id, 'intrinsic', 'intrinsic_color.txt')
+        rgb_intrinsic = np.loadtxt(intrinsic_file)[:3, :3]
+        # some color intrinsic matrix is messed up with depth intrin
+        if rgb_intrinsic[0, 0] < 1000:
+            ## if so, assign an approx intrinsic matrix, sorry for the hard code, it's Scannet's fault
+            rgb_intrinsic = np.array([[1170.187988, 0.000000, 647.750000],
+                                      [0.000000, 1170.187988, 483.750000],
+                                      [0.000000, 0.000000, 1.000000]])
+        return rgb_intrinsic
+    elif sensor == 'depth':
+        intrinsic_file = osp.join(data_split_dir, scan_id, 'intrinsic', 'intrinsic_depth.txt')
+        depth_intrinsic = np.loadtxt(intrinsic_file)[:3, :3]
+        return depth_intrinsic
+    else:
+        raise ValueError('sensor should be color or depth')
+        
 def scenegraphfusion2scan3r(scan_id, prediction_folder, edge2idx, class2idx, cfg):
     
     inseg_ply_file = osp.join(prediction_folder, 'inseg.ply')
     pred_file = osp.join(prediction_folder, 'predictions.json')
     ply_save_file = osp.join(prediction_folder, 'inseg_filtered.ply')
+    data_npy_file = osp.join(prediction_folder, 'data.npy')
     cloud_pd, points_pd, segments_pd = point_cloud.load_inseg(inseg_ply_file)
     filter_seg_size = cfg.preprocess.filter_segment_size
     # get num of segments
@@ -85,6 +135,8 @@ def scenegraphfusion2scan3r(scan_id, prediction_folder, edge2idx, class2idx, cfg
         verts.append(vert)
     
     verts = np.asarray(verts, dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('label', 'u2')])
+    np.save(data_npy_file, verts)
+    
     plydata = PlyData([PlyElement.describe(verts, 'vertex', comments=['vertices'])])
     with open(ply_save_file, mode='wb') as f: PlyData(plydata).write(f)
     
@@ -340,3 +392,222 @@ def make_bow_vector(sentence, word_2_idx):
         else:
             vec[word_2_idx[word]]+=1
     return vec
+
+def save_ply_pcs(data_dir, scan_id, label_file_name, save_file):
+    filename_in = osp.join(data_dir, scan_id, label_file_name)
+    file = open(filename_in, 'rb')
+    ply_data = PlyData.read(file)
+    file.close()
+    x = ply_data['vertex']['x']
+    y = ply_data['vertex']['y']
+    z = ply_data['vertex']['z']
+    red = ply_data['vertex']['red']
+    green = ply_data['vertex']['green']
+    blue = ply_data['vertex']['blue']
+    object_id = ply_data['vertex']['objectId']
+    global_id = ply_data['vertex']['globalId']
+    nyu40_id = ply_data['vertex']['NYU40']
+    eigen13_id = ply_data['vertex']['Eigen13']
+    rio27_id = ply_data['vertex']['RIO27']
+
+    vertices = np.empty(len(x), dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),  ('red', 'u1'), ('green', 'u1'), ('blue', 'u1'),
+                                                     ('objectId', 'h'), ('globalId', 'h'), ('NYU40', 'u1'), ('Eigen13', 'u1'), ('RIO27', 'u1')])
+    
+    vertices['x'] = x.astype('f4')
+    vertices['y'] = y.astype('f4')
+    vertices['z'] = z.astype('f4')
+    vertices['red'] = red.astype('u1')
+    vertices['green'] = green.astype('u1')
+    vertices['blue'] = blue.astype('u1')
+    vertices['objectId'] = object_id.astype('h')
+    vertices['globalId'] = global_id.astype('h')
+    vertices['NYU40'] = nyu40_id.astype('u1')
+    vertices['Eigen13'] = eigen13_id.astype('u1')
+    vertices['RIO27'] = rio27_id.astype('u1')
+    
+    np.save(save_file, vertices)
+    
+    return vertices
+
+def load_scan_pcs(data_dir, scan_id, folder = "scene_graph_fusion", downsample_voxel_size = 0.05):
+    import open3d as o3d
+    ply_data_npy_file = osp.join(data_dir, scan_id, folder, 'data.npy')
+    ply_data = np.load(ply_data_npy_file)
+    points = np.stack(
+        [ply_data['x'], 
+            ply_data['y'], 
+            ply_data['z']]
+        ).transpose((1, 0))
+    # downsample
+    ## create open3d point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+    ## downsample
+    pcd_voxeled = pcd.voxel_down_sample(voxel_size=downsample_voxel_size)
+    points_voxeled = np.asarray(pcd_voxeled.points)
+    ## augment points_voxeled with one
+    points_voxeled = np.concatenate((points_voxeled, np.ones((points_voxeled.shape[0], 1))), axis = 1)
+    
+    return points_voxeled.astype(np.float32)
+
+def raycastImgFromMesh(scene, mesh_triangles_arr, 
+                       img_w, img_h, intrinsic, pose_C_W):
+    import open3d as o3d
+    # raycasting
+    num_triangles = mesh_triangles_arr.shape[0]
+    ## rays
+    rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
+        intrinsic_matrix = intrinsic.astype(np.float64),
+        extrinsic_matrix = pose_C_W.astype(np.float64),
+        width_px = img_w, height_px = img_h
+    )
+    ans = scene.cast_rays(rays)
+    hit_triangles_ids = ans['primitive_ids'].numpy()
+    hit_triangles_ids_valid_masks = (hit_triangles_ids<num_triangles)
+    hit_triangles_ids_valid = hit_triangles_ids[hit_triangles_ids_valid_masks]
+    hit_triangles_valid = mesh_triangles_arr[hit_triangles_ids_valid]
+    hit_points_idx = hit_triangles_valid[:,0]
+    
+    ray_idxs = hit_triangles_ids_valid_masks
+    return ray_idxs, hit_points_idx
+
+def getPatchAnno(gt_anno_2D, patch_w, patch_h, th = 0.5):
+    image_h, image_w = gt_anno_2D.shape
+    patch_h_size = int(image_h / patch_h)
+    patch_w_size = int(image_w / patch_w)
+    
+    patch_annos = np.zeros((patch_h, patch_w), dtype=np.uint64)
+    for patch_h_i in range(patch_h):
+        h_start = round(patch_h_i * patch_h_size)
+        h_end = round((patch_h_i + 1) * patch_h_size)
+        for patch_w_j in range(patch_w):
+            w_start = round(patch_w_j * patch_w_size)
+            w_end = round((patch_w_j + 1) * patch_w_size)
+            patch_size = (w_end - w_start) * (h_end - h_start)
+            
+            anno = gt_anno_2D[h_start:h_end, w_start:w_end]
+            obj_ids, counts = np.unique(anno.reshape(-1), return_counts=True)
+            max_idx = np.argmax(counts)
+            max_count = counts[max_idx]
+            if(max_count > th*patch_size):
+                patch_annos[patch_h_i,patch_w_j] = obj_ids[max_idx]
+    return patch_annos
+
+class ElasticDistortion: # from torch-points3d
+    """Apply elastic distortion on sparse coordinate space. First projects the position onto a 
+    voxel grid and then apply the distortion to the voxel grid.
+
+    Parameters
+    ----------
+    granularity: List[float]
+        Granularity of the noise in meters
+    magnitude:List[float]
+        Noise multiplier in meters
+    Returns
+    -------
+    data: Data
+        Returns the same data object with distorted grid
+    """
+
+    def __init__(
+        self, apply_distorsion: bool = True, granularity: list = [0.2, 0.8], magnitude=[0.4, 1.6],
+    ):
+        assert len(magnitude) == len(granularity)
+        self._apply_distorsion = apply_distorsion
+        self._granularity = granularity
+        self._magnitude = magnitude
+
+    @staticmethod
+    def elastic_distortion(coords, granularity, magnitude):
+        coords = coords.numpy()
+        blurx = np.ones((3, 1, 1, 1)).astype("float32") / 3
+        blury = np.ones((1, 3, 1, 1)).astype("float32") / 3
+        blurz = np.ones((1, 1, 3, 1)).astype("float32") / 3
+        coords_min = coords.min(0)
+
+        # Create Gaussian noise tensor of the size given by granularity.
+        noise_dim = ((coords - coords_min).max(0) // granularity).astype(int) + 3
+        noise = np.random.randn(*noise_dim, 3).astype(np.float32)
+
+        # Smoothing.
+        for _ in range(2):
+            noise = scipy.ndimage.filters.convolve(noise, blurx, mode="constant", cval=0)
+            noise = scipy.ndimage.filters.convolve(noise, blury, mode="constant", cval=0)
+            noise = scipy.ndimage.filters.convolve(noise, blurz, mode="constant", cval=0)
+
+        # Trilinear interpolate noise filters for each spatial dimensions.
+        ax = [
+            np.linspace(d_min, d_max, d)
+            for d_min, d_max, d in zip(coords_min - granularity, coords_min + granularity * (noise_dim - 2), noise_dim)
+        ]
+        interp = scipy.interpolate.RegularGridInterpolator(ax, noise, bounds_error=0, fill_value=0)
+        coords = coords + interp(coords) * magnitude
+        return torch.tensor(coords).float()
+    def __call__(self, pcs_pos):
+        # coords = pcs_pos / self._spatial_resolution
+        if self._apply_distorsion:
+            if random.random() < 0.95:
+                for i in range(len(self._granularity)):
+                    pcs_pos = ElasticDistortion.elastic_distortion(pcs_pos, self._granularity[i], self._magnitude[i],)
+        return pcs_pos
+
+    def __repr__(self):
+        return "{}(apply_distorsion={}, granularity={}, magnitude={})".format(
+            self.__class__.__name__, self._apply_distorsion, self._granularity, self._magnitude,
+        )
+        
+def sampleCandidateScenesForEachScan(scan_id, scan_ids, 
+                                        refscans2scans, scans2refscans , num_scenes):
+    scans_same_scene = refscans2scans[scans2refscans[scan_id]]
+    # sample other scenes
+    sample_candidate_scans = [scan for scan in scan_ids if scan not in scans_same_scene]
+    if num_scenes < 0:
+        return sample_candidate_scans
+    elif num_scenes <= len(sample_candidate_scans):
+        return random.sample(sample_candidate_scans, num_scenes)
+    else:
+        return sample_candidate_scans
+
+def sampleCrossTime(scan_id, refscans2scans, scans2refscans):
+    candidate_scans = []
+    ref_scan = scans2refscans[scan_id]
+    for scan in refscans2scans[ref_scan]:
+        if scan != scan_id:
+            candidate_scans.append(scan)
+    if len(candidate_scans) == 0:
+        return None
+    else:
+        sampled_scan = random.sample(candidate_scans, 1)[0]
+        return sampled_scan
+        
+def RunBashBatch(commands, jobs_per_step = 1):
+    class BashThread(threading.Thread):
+        def __init__(self,task_queue, id):
+            threading.Thread.__init__(self)
+            self.queue = task_queue
+            self.th_id = id
+            self.start()
+
+        def run(self):
+            while True:
+                try:
+                    command = self.queue.get(block=False)
+                    subprocess.call(command, shell=True)
+                    self.queue.task_done()
+                except queue.Empty:
+                    break
+    class BashThreadPool():
+        def __init__(self,task_queue,thread_num):
+            self.queue = task_queue
+            self.pool = []
+            for i in range(thread_num):
+                self.pool.append(BashThread(task_queue, i))
+
+        def joinAll(self):
+            self.queue.join()
+    # task submission
+    commands_queue = queue.Queue()
+    for command in commands:
+        commands_queue.put(command)
+    map_eval_thread_pool = BashThreadPool(commands_queue, jobs_per_step)
+    map_eval_thread_pool.joinAll()

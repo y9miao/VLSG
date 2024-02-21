@@ -242,9 +242,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
         self.obj_topk = self.cfg.data.scene_graph.obj_topk
         self.obj_img_patches_scan_tops = {}
-        for scan_id in self.all_scans_split:
-            obj_visual_file = osp.join(self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
-            self.obj_img_patches_scan_tops[scan_id] = common.load_pkl_data(obj_visual_file)
+        if 'img_patch' in self.sgaligner_modules:
+            for scan_id in self.all_scans_split:
+                obj_visual_file = osp.join(self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
+                self.obj_img_patches_scan_tops[scan_id] = common.load_pkl_data(obj_visual_file)
                 
         # set data augmentation
         self.use_aug = cfg.train.data_aug.use_aug
@@ -276,7 +277,9 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         if self.split == 'val' or self.split == 'test':
             self.candidate_scans = {}
             for scan_id in self.scan_ids:
-                self.candidate_scans[scan_id] = self.sampleCandidateScenesForEachScan(scan_id, self.num_scenes)
+                self.candidate_scans[scan_id] = scan3r.sampleCandidateScenesForEachScan(
+                    scan_id, self.scan_ids, self.refscans2scans, self.scans2refscans, self.num_scenes)
+            
             
         # generate data items given multiple scans
         self.data_items = self.generateDataItems()
@@ -527,6 +530,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         n_words_per_scene = {candi_scan_id: 0 for candi_scan_id in all_candi_scans} # number of words in each scene
         n_word_scene = {candi_scan_id: {} for candi_scan_id in all_candi_scans} # number of words for each semantic in each scene
         reweight_matrix_scans = {candi_scan_id: None for candi_scan_id in all_candi_scans}
+        cadidate_scans_semantic_ids = []
         
         ## cur scan objs
         objs_ids_cur_scan = self.scene_graphs[scan_id]['obj_ids']
@@ -535,6 +539,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             obj_3D_idx2info[idx] = self.obj_3D_anno[scan_id][obj_id]
             obj_3D_id2idx_cur_scan[obj_id] = idx
             scans_sg_obj_idxs.append(sg_obj_idxs[scan_id][obj_id])
+            cadidate_scans_semantic_ids.append(self.obj_3D_anno[scan_id][obj_id][2])
             if scan_id not in candata_scan_obj_idxs:
                 candata_scan_obj_idxs[scan_id] = []
             candata_scan_obj_idxs[scan_id].append(idx)
@@ -555,6 +560,8 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             for obj_id in objs_ids_cand_scan:
                 obj_3D_idx2info[idx] = self.obj_3D_anno[cand_scan_id][obj_id]
                 scans_sg_obj_idxs.append(sg_obj_idxs[cand_scan_id][obj_id])
+                cadidate_scans_semantic_ids.append(
+                    self.obj_3D_anno[cand_scan_id][obj_id][2])
                 if cand_scan_id not in candata_scan_obj_idxs:
                     candata_scan_obj_idxs[cand_scan_id] = []
                 candata_scan_obj_idxs[cand_scan_id].append(idx)
@@ -575,8 +582,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         candata_scan_obj_idxs[scan_id] = torch.Tensor(candata_scan_obj_idxs[scan_id]).long()
         ## to numpy
         scans_sg_obj_idxs = np.array(scans_sg_obj_idxs, dtype=np.int32)
+        cadidate_scans_semantic_ids = np.array(cadidate_scans_semantic_ids, dtype=np.int32)
         ## to torch
         scans_sg_obj_idxs = torch.from_numpy(scans_sg_obj_idxs).long()
+        cadidate_scans_semantic_ids = torch.from_numpy(cadidate_scans_semantic_ids).long()
         ## calculate tf_idf reweight matrix for each object in each scene
         if self.use_tf_idf:
             for cand_scan_id in all_candi_scans:
@@ -633,8 +642,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             'e2j_matrix': torch.from_numpy(e2j_matrix).float(),
             'f1j_matrix': torch.from_numpy(f1j_matrix).float(),
             'scans_sg_obj_idxs': scans_sg_obj_idxs,
+            'cadidate_scans_semantic_ids': cadidate_scans_semantic_ids,
             'candata_scan_obj_idxs': candata_scan_obj_idxs,
-            'reweight_matrix_scans': reweight_matrix_scans
+            'reweight_matrix_scans': reweight_matrix_scans,
+            'n_scenes_per_sem': n_scenes_per_sem,
         }
         return assoc_data_dict
     

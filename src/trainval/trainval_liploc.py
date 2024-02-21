@@ -37,6 +37,7 @@ LipLocModel = importlib.import_module(f"src.models.LipLoc.models.{LipLoc_CFG.mod
 # dataset
 from datasets.loaders import get_train_val_data_loader, get_train_dataloader, get_val_dataloader
 from datasets.scan3r_liploc import Scan3rLipLocDataset
+from datasets.scannet_liploc import ScannetLipLocDataset
 # utils
 from utils import common, scan3r, torch_util
 
@@ -128,9 +129,13 @@ class Trainer(EpochBasedTrainer):
         self.register_scheduler(lr_scheduler)
 
     def getDataLoader(self, cfg):
-        dataset = Scan3rLipLocDataset
-        # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, dataset)
-        # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, dataset)
+        if cfg.data.name == "Scan3R":
+            dataset = Scan3rLipLocDataset
+        elif cfg.data.name == "Scannet":
+            dataset = ScannetLipLocDataset
+        else:
+            raise ValueError("Unknown dataset type: {}".format(cfg.data.name))
+
         train_dataset, train_dataloader = get_train_dataloader(cfg, dataset)
         val_dataset, val_dataloader = get_val_dataloader(cfg, dataset)
         return train_dataset, train_dataloader, val_dataset, val_dataloader

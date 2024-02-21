@@ -1,20 +1,28 @@
 # LOG: This experiement is to test the existing method LidarClip for room retrieval task
 
-# for Scan3R data
+# for data set
 data :
-  name            : Scan3R
+  name            : Scannet
   root_dir        : '' # to be read in code from env varia  
   rescan: True
-  temporal: True
+  temporal: False
   resplit: True
+  gt_patch: "gt_patch_anno/patch_anno_24_32"
+  gt_patch_th: 0.7
   img:
-    img_step: 5
-  img_encoding:
-    feature_dir: "Features2D/clip_ViT_L_14" # relative to data_root_dir/files
-  depth:
-    scale: 1000.0
-    min_depth: 0.1
-    max_depth: 8.0
+    img_step: 50
+    img_size: 224
+  pointcloud:
+    save_range: False
+    use_saved_range: True
+    use_mesh: True
+    range_min: 0.2
+    range_max: 8.0
+    fov_up: 45.0
+    fov_down: -45.0
+    range_W: 900
+    range_H: 128
+    range_name: "Features3D/range_900_128"
   cross_scene:
     use_cross_scene: True
     num_scenes: 9 # number of scenes 
@@ -54,16 +62,15 @@ sgaligner:
     overlap_high        : 0.0
     data_mode: orig
 
-# LidarClip model
-model_name    : 'LidarClip'
+# LipLoc model
+model_name    : 'LipLoc'
 
 # for 2D-3D match
 model:
-  # GCVit backbone
+  #LipLoc
   backbone3D: 
     # to be read in code from env varia, relative to VLSG_SPACE
-    cfg_file: "/home/yang/big_ssd/Scan3R/VLSG/src/models/lidarclip/model/sst_encoder_only_config.py"
-    pretrained: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/LidarClip/lidar_encoder_l14_pretrained.pth"
+    pretrained: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/LipLoc/best.pth"
     dim_3d: 768
   other:
     drop: 0.2
@@ -73,13 +80,12 @@ output_dir: "" # to be read in code from env varia
 mode: "train"
 # for training
 train:
-  batch_size: 8
-  num_workers: 4
+  batch_size: 16
+  num_workers: 2
   freeze_backbone: True
   use_pretrained: False
   log_steps: 20
   snapshot_steps: 1
-  data_type: "scan"
   optim:
     lr: 0.0011
     scheduler: "step"
@@ -93,7 +99,7 @@ train:
     free_backbone_epoch: 10500 # freeze backbone until certain epochs
     grad_acc_steps: 1
   loss:
-    use_temporal: True
+    use_temporal: False
     loss_type: "cos"
     alpha: 0.5
     temperature: 0.1
@@ -104,16 +110,17 @@ train:
 # for validation
 val:
   batch_size: 16
-  num_workers: 8
+  num_workers: 2
   pretrained: "./"
   room_retrieval:
+    cross_rooms: True # for metric of  room retrieval
     epsilon_th: 0.8
-    method_name: "LidarClipE8"
+    method_name: "LipLocE13_scannet"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./epoch-8.pth.tar" 
+  resume: "./snapshots/epoch-13.pth.tar" 
 # others
 seed: 42
 

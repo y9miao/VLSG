@@ -1,5 +1,4 @@
 import argparse
-from enum import unique
 import os 
 import os.path as osp
 from re import T
@@ -40,7 +39,7 @@ from mmcv import Config
 from models.patch_SGIE_aligner import PatchSGIEAligner
 # dataset
 from datasets.loaders import get_test_dataloader, get_val_dataloader
-from datasets.scan3r_objpair_XTAE_SGI import PatchObjectPairXTAESGIDataSet
+from datasets.scannet_objpair import ScannetPatchObjDataset
 
 def _to_channel_last(x):
     """
@@ -62,6 +61,21 @@ def _to_channel_first(x):
     """
     return x.permute(0, 3, 1, 2)
 
+# get max, min number of candidate scans
+def get_max_min_num_candidates(datadict, max = None, min = None):
+    batch_size = len(datadict['assoc_data_dict'])
+    for batch_i in range(batch_size):
+        num_candidates = len(datadict['assoc_data_dict'][batch_i]['candata_scan_obj_idxs'])
+        if max is None:
+            max = num_candidates
+        if min is None:
+            min = num_candidates
+        if num_candidates > max:
+            max = num_candidates
+        if num_candidates < min:
+            min = num_candidates
+    return max, min
+
 # use PathObjAligner for room retrieval
 class RoomRetrivalScore():
     def __init__(self, cfg):
@@ -69,11 +83,13 @@ class RoomRetrivalScore():
         # cfg
         self.cfg = cfg 
         self.method_name = cfg.val.room_retrieval.method_name
+        self.temporal = cfg.data.temporal
         
         # dataloader
         start_time = time.time()
-        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = PatchObjectPairXTAESGIDataSet)
-        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = PatchObjectPairXTAESGIDataSet)
+        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = ScannetPatchObjDataset)
+        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = ScannetPatchObjDataset)
+
         # register dataloader
         self.val_data_loader = val_data_loader
         self.val_dataset = val_dataset
@@ -89,7 +105,6 @@ class RoomRetrivalScore():
         # model
         self.registerPatchObjectAlignerFromCfg(cfg)
         self.model.eval()
-        self.loss_type = cfg.train.loss.loss_type
         self.use_tf_idf = cfg.data.cross_scene.use_tf_idf
         
         # results
@@ -204,7 +219,7 @@ class RoomRetrivalScore():
         return patch_features_batch, obj_3D_embeddings_norm, forward_time
     
     def room_retrieval_dict(self, data_dict, dataset, room_retrieval_record, record_retrieval = False):
-        
+        result = {}
         # room retrieval with scan point cloud
         batch_size = data_dict['batch_size']
         top_k_list = [1,3,5]
@@ -228,27 +243,15 @@ class RoomRetrivalScore():
             assoc_data_dict = data_dict['assoc_data_dict'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict['candata_scan_obj_idxs']
-            cadidate_scans_semantic_ids = assoc_data_dict['cadidate_scans_semantic_ids']
             if self.use_tf_idf:
-                # reweight_matrix_scans = assoc_data_dict['reweight_matrix_scans']
-                # reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
-                
-                """
-                nid -> number of patched of class that belongs to object i in image d
-                nd -> number of patches in image d
-                N -> total number of rooms
-                ni -> number of rooms that contains object i
-                """
-                n_scenes_per_sem = assoc_data_dict['n_scenes_per_sem'] # ni
-                n_scenes = len(candata_scan_obj_idxs) #  N
-                
-            target_scan_id = data_dict['scan_ids'][batch_i]
+                reweight_matrix_scans = assoc_data_dict['reweight_matrix_scans']
+                reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
+            target_scan_id = data_dict['target_scan_ids'][batch_i]
             candidates_objs_embeds_scan = obj_3D_embeddings_norm[candidates_obj_sg_idxs]
             ## start room retrieval in cpu
             patch_features_cpu = patch_features.cpu()
             candata_scan_obj_idxs_cpu = torch_util.release_cuda_torch(candata_scan_obj_idxs)
             obj_3D_embeddings_norm_cpu_scan = torch_util.release_cuda_torch(candidates_objs_embeds_scan)
-            cadidate_scans_semantic_ids = torch_util.release_cuda_torch(cadidate_scans_semantic_ids)
             candidates_obj_embeds = {
                 candidate_scan_id: obj_3D_embeddings_norm_cpu_scan[candata_scan_obj_idxs_cpu[candidate_scan_id]] \
                 for candidate_scan_id in candata_scan_obj_idxs_cpu}
@@ -258,30 +261,11 @@ class RoomRetrivalScore():
                 candidate_obj_embeds = candidates_obj_embeds[candidate_scan_id]
                 patch_obj_sim = patch_features_cpu_norm@candidate_obj_embeds.T
                 if self.use_tf_idf:
-                    # reweight_obj_matrixs = reweight_matrix_scans[candidate_scan_id] + 0.5
-                    # matched_candidate_objs_idxs = patch_obj_sim.argmax(dim=1)
-                    # matched_sim = patch_obj_sim.gather(1, matched_candidate_objs_idxs.unsqueeze(1)).squeeze(1)
-                    # reweight_patch_obj_sim = matched_sim * reweight_obj_matrixs[matched_candidate_objs_idxs]
-                    # score = reweight_patch_obj_sim.sum().item() / reweight_obj_matrixs.sum().item()
-                    
+                    reweight_obj_matrixs = reweight_matrix_scans[candidate_scan_id] + 0.5
                     matched_candidate_objs_idxs = patch_obj_sim.argmax(dim=1)
                     matched_sim = patch_obj_sim.gather(1, matched_candidate_objs_idxs.unsqueeze(1)).squeeze(1)
-                    
-                    # get semantic category of matched objects
-                    matched_obj_sem_ids = cadidate_scans_semantic_ids[candata_scan_obj_idxs_cpu[candidate_scan_id]][matched_candidate_objs_idxs]
-                    unique_sem_ids, inverse_indices, counts = torch.unique(
-                        matched_obj_sem_ids, return_counts=True, return_inverse=True)
-                    reweight_matrix_uniq = torch.zeros_like(unique_sem_ids, dtype=torch.float32)
-                    for idx, (sem_id, count) in enumerate(zip(unique_sem_ids, counts)):
-                        N = torch.tensor(n_scenes, dtype=torch.float32)
-                        ni = torch.tensor(len(n_scenes_per_sem[sem_id.item()]), dtype=torch.float32)
-                        nid = torch.tensor( count, dtype=torch.float32)
-                        nd = torch.tensor(matched_sim.shape[0], dtype=torch.float32)
-                        # tf-idf
-                        reweight_matrix_uniq[idx] = nid * (1 + torch.log(N/ni)) / nd
-                    reweight_matrix = reweight_matrix_uniq[inverse_indices]
-                    matched_candidate_obj_sim = matched_sim * reweight_matrix
-                    score = matched_candidate_obj_sim.sum().item() / reweight_matrix.sum().item()
+                    reweight_patch_obj_sim = matched_sim * reweight_obj_matrixs[matched_candidate_objs_idxs]
+                    score = reweight_patch_obj_sim.sum().item() / reweight_obj_matrixs.sum().item()
                 else:
                     matched_candidate_obj_sim = torch.max(patch_obj_sim, dim=1)[0]
                     score = matched_candidate_obj_sim.sum().item()
@@ -296,74 +280,6 @@ class RoomRetrivalScore():
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
             matched_obj_obj_ids = obj_ids_cpu_scan[matched_obj_idxs]
             
-            # temporal
-            room_score_scans_T = {}
-            assoc_data_dict_temp = data_dict['assoc_data_dict_temp'][batch_i]
-            candidates_obj_sg_idxs = assoc_data_dict_temp['scans_sg_obj_idxs']
-            candata_scan_obj_idxs = assoc_data_dict_temp['candata_scan_obj_idxs']
-            cadidate_scans_semantic_ids = assoc_data_dict_temp['cadidate_scans_semantic_ids']
-            if self.use_tf_idf:
-                # reweight_matrix_scans = assoc_data_dict_temp['reweight_matrix_scans']
-                # reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
-                """
-                nid -> number of patched of class that belongs to object i in image d
-                nd -> number of patches in image d
-                N -> total number of rooms
-                ni -> number of rooms that contains object i
-                """
-                n_scenes_per_sem = assoc_data_dict_temp['n_scenes_per_sem'] # ni
-                n_scenes = len(candata_scan_obj_idxs) #  N
-            target_scan_id = data_dict['scan_ids_temporal'][batch_i]
-            candidates_objs_embeds_scan = obj_3D_embeddings_norm[candidates_obj_sg_idxs]
-            ## start room retrieval in cpu
-            candata_scan_obj_idxs_cpu = torch_util.release_cuda_torch(candata_scan_obj_idxs)
-            obj_3D_embeddings_norm_cpu_scan = torch_util.release_cuda_torch(candidates_objs_embeds_scan)
-            cadidate_scans_semantic_ids = torch_util.release_cuda_torch(cadidate_scans_semantic_ids)
-            candidates_obj_embeds = {
-                candidate_scan_id: obj_3D_embeddings_norm_cpu_scan[candata_scan_obj_idxs_cpu[candidate_scan_id]] \
-                for candidate_scan_id in candata_scan_obj_idxs_cpu}
-            start_time = time.time()
-            for candidate_scan_id in candidates_obj_embeds:
-                candidate_obj_embeds = candidates_obj_embeds[candidate_scan_id]
-                patch_obj_sim = patch_features_cpu_norm@candidate_obj_embeds.T
-                if self.use_tf_idf:
-                    # reweight_obj_matrixs = reweight_matrix_scans[candidate_scan_id]
-                    # matched_candidate_objs_idxs = patch_obj_sim.argmax(dim=1)
-                    # matched_sim = patch_obj_sim.gather(1, matched_candidate_objs_idxs.unsqueeze(1)).squeeze(1)
-                    # reweight_patch_obj_sim = matched_sim * reweight_obj_matrixs[matched_candidate_objs_idxs]
-                    # score = reweight_patch_obj_sim.sum().item() / reweight_obj_matrixs.sum().item()
-                    matched_candidate_objs_idxs = patch_obj_sim.argmax(dim=1)
-                    matched_sim = patch_obj_sim.gather(1, matched_candidate_objs_idxs.unsqueeze(1)).squeeze(1)
-                    # get semantic category of matched objects
-                    matched_obj_sem_ids = cadidate_scans_semantic_ids[candata_scan_obj_idxs_cpu[candidate_scan_id]][matched_candidate_objs_idxs]
-                    unique_sem_ids, inverse_indices, counts = torch.unique(
-                        matched_obj_sem_ids, return_counts=True, return_inverse=True)
-                    reweight_matrix_uniq = torch.zeros_like(unique_sem_ids, dtype=torch.float32)
-                    for idx, (sem_id, count) in enumerate(zip(unique_sem_ids, counts)):
-                        N = torch.tensor(n_scenes, dtype=torch.float32)
-                        ni = torch.tensor(len(n_scenes_per_sem[sem_id.item()]), dtype=torch.float32)
-                        nid = torch.tensor( count, dtype=torch.float32)
-                        nd = torch.tensor(matched_sim.shape[0], dtype=torch.float32)
-                        # tf-idf
-                        reweight_matrix_uniq[idx] = nid * (1 + torch.log(N/ni)) / nd
-                    reweight_matrix = reweight_matrix_uniq[inverse_indices]
-                    matched_candidate_obj_sim = matched_sim * reweight_matrix
-                    score = matched_candidate_obj_sim.sum().item() / reweight_matrix.sum().item()
-                else:
-                    matched_candidate_obj_sim = torch.max(patch_obj_sim, dim=1)[0]
-                    score = matched_candidate_obj_sim.sum().item()
-                room_score_scans_T[candidate_scan_id] = score
-
-            room_sorted_by_scores = [item[0] for item in sorted(room_score_scans_T.items(), key=lambda x: x[1], reverse=True)]
-            for k in top_k_list:
-                if target_scan_id in room_sorted_by_scores[:k]:
-                    top_k_recall_temporal["R@{}_T_S".format(k)] += 1
-            retrieval_time_temporal += time.time() - start_time
-            
-            matched_obj_idxs_temp = (patch_features_cpu_norm @ candidates_obj_embeds[target_scan_id].T).argmax(dim=1)
-            obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
-            matched_obj_idx_temp = obj_ids_cpu_scan[matched_obj_idxs_temp]
-            
             # retrieva_record
             scan_id = data_dict['scan_ids'][batch_i]
             if scan_id not in room_retrieval_record:
@@ -373,18 +289,13 @@ class RoomRetrivalScore():
             frame_idx = data_dict['frame_idxs'][batch_i]
             frame_retrieval = {
                 'frame_idx': frame_idx,
-                'temporal_scan_id': data_dict['scan_ids_temporal'][batch_i],
                 'matched_obj_obj_ids': matched_obj_obj_ids,
-                'matched_obj_idx_temp': matched_obj_idx_temp,
-                'gt_anno': data_dict['obj_2D_patch_anno_flatten_list'][batch_i],
                 'room_score_scans_NT': room_score_scans_NT,
-                'room_score_scans_T': room_score_scans_T,
             }
             room_retrieval_record[scan_id]['frames_retrieval'][frame_idx] = frame_retrieval
 
         # average over batch
         for k in top_k_list:
-            top_k_recall_temporal["R@{}_T_S".format(k)] /= 1.0*batch_size
             top_k_recall_non_temporal["R@{}_NT_S".format(k)] /= 1.0*batch_size
         retrieval_time_temporal = retrieval_time_temporal / (1.0*batch_size)
         retrieval_time_non_temporal = retrieval_time_non_temporal / (1.0*batch_size)
@@ -392,15 +303,15 @@ class RoomRetrivalScore():
         
         result = {
             'img_forward_time': img_forward_time,
-            'time_T_S': retrieval_time_temporal,
             'time_NT_S': retrieval_time_non_temporal,
         }
-        result.update(top_k_recall_temporal)
         result.update(top_k_recall_non_temporal)
         return result
 
     def room_retrieval_val(self):
         # val 
+        # record number of candidates
+        max_num_candidates, min_num_candidates = None, None
         with torch.no_grad():
             data_dicts = tqdm.tqdm(enumerate(self.val_data_loader), total=len(self.val_data_loader))
             for iteration, data_dict in data_dicts:
@@ -408,7 +319,15 @@ class RoomRetrivalScore():
                 result = self.room_retrieval_dict(data_dict, self.val_dataset, self.val_room_retrieval_record, True)
                 self.val_room_retrieval_summary.update_from_result_dict(result)
                 torch.cuda.empty_cache()
+                
+                max_num_candidates, min_num_candidates = get_max_min_num_candidates(
+                    data_dict, max_num_candidates, min_num_candidates)
+            
         val_items = self.val_room_retrieval_summary.tostringlist()
+        num_candidates_string = 'Val: Max num candidates: {}, Min num candidates: {}'.format(
+            max_num_candidates, min_num_candidates)
+        val_items.append(num_candidates_string)
+        
         # write metric to file
         val_file = osp.join(self.output_dir, 'val_result.txt')
         common.write_to_txt(val_file, val_items)
@@ -417,6 +336,8 @@ class RoomRetrivalScore():
         common.write_pkl_data(self.val_room_retrieval_record, retrieval_record_file)
         
         # test 
+        # record number of candidates
+        max_num_candidates, min_num_candidates = None, None
         with torch.no_grad():
             data_dicts = tqdm.tqdm(enumerate(self.test_data_loader), total=len(self.test_data_loader))
             for iteration, data_dict in data_dicts:
@@ -424,7 +345,15 @@ class RoomRetrivalScore():
                 result = self.room_retrieval_dict(data_dict, self.test_dataset,self.test_room_retrieval_record, True)
                 self.test_room_retrieval_summary.update_from_result_dict(result)
                 torch.cuda.empty_cache()
+                
+                max_num_candidates, min_num_candidates = get_max_min_num_candidates(
+                    data_dict, max_num_candidates, min_num_candidates)
+                
         test_items = self.test_room_retrieval_summary.tostringlist()
+        num_candidates_string = 'Test: Max num candidates: {}, Min num candidates: {}'.format(
+            max_num_candidates, min_num_candidates)
+        test_items.append(num_candidates_string)
+        
         # write metric to file
         test_file = osp.join(self.output_dir, 'test_result.txt')
         common.write_to_txt(test_file, test_items)

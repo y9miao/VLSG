@@ -126,8 +126,9 @@ class Scan3rLidarClipDataset(data.Dataset):
         if self.split == 'val' or self.split == 'test':
             self.candidate_scans = {}
             for scan_id in self.scan_ids:
-                self.candidate_scans[scan_id] = self.sampleCandidateScenesForEachScan(scan_id, self.num_scenes)
-        break_point = None
+                self.candidate_scans[scan_id] = scan3r.sampleCandidateScenesForEachScan(
+                    scan_id, self.scan_ids, self.refscans2scans, self.scans2refscans, self.num_scenes)
+            
         
     def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
         candidate_scans = []

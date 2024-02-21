@@ -1,0 +1,21 @@
+data :
+  name            : Scannet
+  root_dir        : '' # to be read in code from env varia  
+  rescan: True
+  resplit: True
+  img_step: 50
+  img:  
+    rotate: True
+    w: 1296
+    h: 968
+  img_encoding:
+    # image patch config
+    patch_w: 32 # number of patchs in width
+    patch_h: 24
+    feat_dim: 768
+    feature_dir: "features_2D/OpenSeg_24_32"
+
+model:
+  name: OpenSeg
+  version: "ViT-L/14"
+  model_path: "/home/yang/big_ssd/Scan3R/VLSG/checkpoint/OpenSeg/openseg_exported_clip"

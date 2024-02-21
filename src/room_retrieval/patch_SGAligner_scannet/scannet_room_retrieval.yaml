@@ -1,53 +1,33 @@
-# LOG: This experiement is to test with temporal and non-temporal loss
-# Also test using cross scenes to train the model STEP BY STEP
-# ALSO Test for loss of ICLLoss
-# due to the original encoder ([512, 512, 512]  - [512, 512] ) has better performance than the 
-#   deeper one, we are using the original one for this experiment
-# firstly we train with no cross-scene objects with temporal loss for some epochs
+seed: 42
 
-# for Scan3R data
-data :
-  name            : Scan3R
-  root_dir        : '' # to be read in code from env varia  
-  rescan: True
-  temporal: True
-  resplit: True
-  img:
-    img_step: 2
-    w: 960
-    h: 540
+data:
+  root_dir: "/home/yang/990Pro/scannet_seqs/data"
+  temporal: False
+  img_step: 50
+  resize_w: 448
+  resize_h: 336
+  patch_w: 32
+  patch_h: 24
+  gt_patch: "gt_patch_anno/patch_anno_24_32"
+  gt_patch_th: 0.7
+  feature_2D_name: "features_2D/dinov2_24_32"
+  inference_step: 50
   img_encoding:
-    # image patch config
-    resize_w: 1024 # resize image for backbone GCVit
-    resize_h: 576
-    img_rotate: True # rotate w,h for backbone GCVit
-    patch_w: 16 # number of patchs in width
-    patch_h: 9
-    record_feature: False # record feature or raw image
-    use_feature: True # use feature or raw image
-    preload_feature: True
-    feature_dir: "Features2D/DinoV2_16_9_scan" # relative to data_root_dir/files
+    use_feature: True
+    img_rotate: False
+    patch_w: 32
+    patch_h: 24
   cross_scene:
     use_cross_scene: True
-    num_scenes: -1 # number of scenes 
+    num_scenes: 49 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
     use_tf_idf: False
-  scene_graph:
-    obj_img_patch: "Features3D/obj_dinov2_top5_l3"
-    obj_patch_num: 60
 
-# for sgaligner
+# for scene graph encoder
 sgaligner:
-  use_pretrained : False
-  pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
-
-  label_file_name : labels.instances.annotated.v2.ply
-  pred_subfix     : inseg.ply
-
   seed: 42
   model_name    : 'sgaligner'
-  modules       : ['point', 'attr', 'gat', 'rel']
-  # modules       : ['point', 'gat', 'rel', 'attr']
+  modules       : ['point', 'gat', 'rel']
   use_predicted : False
   registration  : False
   scan_type     : 'scan'
@@ -61,22 +41,13 @@ sgaligner:
     anchor_type_name    : '' 
 
   model :
-    rel_dim             : 41
+    rel_dim             : 9
     attr_dim            : 164
     img_patch_feat_dim  : 1536
     alignment_thresh    : 0.4
 
-  train :
-    pc_res: 512
-
-  val :
-    pc_res: 512
-    overlap_low         : 0.0
-    overlap_high        : 0.0
-    data_mode: orig
-
-# our model
-model_name    : 'ObjectPatchAligner'
+  pc_res: 512
+  use_pretrained: False
 
 # for 2D-3D object match
 model:
@@ -94,19 +65,16 @@ model:
     encoder_dim: 400
   # 3D obj embedding encoder
   obj:
-    embedding_dim: 400 # fixed
+    embedding_dim: 300 # fixed
     embedding_hidden_dims: [512, 512]
     encoder_dim: 400
   other:
     drop: 0.0
 
-# implemetation
-output_dir: "" # to be read in code from env varia
-mode: "train"
 # for training
 train:
-  batch_size: 16
-  num_workers: 8
+  batch_size: 32
+  num_workers: 16
   use_pretrained: False
   log_steps: 1
   snapshot_steps: 1
@@ -124,7 +92,7 @@ train:
     free_sgaligner_epoch: -1 # freeze sgaligner until certain epochs
     grad_acc_steps: 1
   loss:
-    use_temporal: True
+    use_temporal: False
     loss_type: "ICLLossBothSidesSumOutLog"
     alpha: 0.5
     temperature: 0.1
@@ -140,23 +108,19 @@ train:
     pcs:
       granularity: [0.05, 0.2, 0.4]
       magnitude: [0.2, 0.4, 0.4]
-    
-  # for vis
-  use_vis: False
-  vis_epoch_steps: 100
 # for validation
 val:
   batch_size: 1
   num_workers: 1
-  pretrained: "./"
   room_retrieval:
+    retrieval: True
     epsilon_th: 0.8
-    method_name: "DinoSGAligner_E14_XAll"
+    method_name: "Test_PGR9_scannet_X50_Retrie_E8"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./week12/DinoSGAligner/epoch-14.pth.tar" 
-# others
-seed: 42
+  resume: "./week12/Test_PGR9_scannet/epoch-8.pth.tar"
 
+# mode
+mode: "val"

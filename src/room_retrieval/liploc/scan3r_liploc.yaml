@@ -108,11 +108,11 @@ train:
 # for validation
 val:
   batch_size: 16
-  num_workers: 8
+  num_workers: 2
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "LipLocE9_S1"
+    method_name: "LipLocE9_S1_scan3r_X10"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR

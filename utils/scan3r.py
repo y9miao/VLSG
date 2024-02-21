@@ -158,6 +158,19 @@ def load_plydata_npy(file_path, obj_ids = None, return_ply_data = False):
     
     if return_ply_data: return points, ply_data
     else: return points
+    
+def sampleCandidateScenesForEachScan(scan_id, scan_ids, 
+                                        refscans2scans, scans2refscans , num_scenes):
+    import random
+    scans_same_scene = refscans2scans[scans2refscans[scan_id]]
+    # sample other scenes
+    sample_candidate_scans = [scan for scan in scan_ids if scan not in scans_same_scene]
+    if num_scenes < 0:
+        return sample_candidate_scans
+    elif num_scenes <= len(sample_candidate_scans):
+        return random.sample(sample_candidate_scans, num_scenes)
+    else:
+        return sample_candidate_scans
 
 def find_cam_centers(frame_idxs, frame_poses):
     cam_centers = []

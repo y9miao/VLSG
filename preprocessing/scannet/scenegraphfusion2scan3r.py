@@ -60,11 +60,12 @@ class ScannetSGPrediction():
     def SceneGraphPrediction2Scan3r(self):
         for scan_id in tqdm(self.scan_ids):
             pred_folder = self.pred_folders[scan_id]
-            # data_dict = scannet_utils.scenegraphfusion2scan3r(scan_id, pred_folder, 
-            #                 self.rel2idx, self.class2idx, self.cfg)
+            data_dict = scannet_utils.scenegraphfusion2scan3r(scan_id, pred_folder, 
+                            self.rel2idx, self.class2idx, self.cfg)
+            
             # save data
             file = osp.join(pred_folder, "{}.pkl".format(scan_id))
-            # common.write_pkl_data(data_dict, file)
+            common.write_pkl_data(data_dict, file)
             
             # get edge features
             scannet_utils.calculate_bow_node_edge_feats(file, self.rel2idx)
@@ -76,7 +77,7 @@ def main():
     cfg.set_new_allowed(True)
     cfg.merge_from_file(cfg_file)
     
-    scannet_dino_generator = ScannetSGPrediction(cfg, split='val')
+    scannet_dino_generator = ScannetSGPrediction(cfg, split='test')
     scannet_dino_generator.SceneGraphPrediction2Scan3r()
     
 if __name__ == '__main__':

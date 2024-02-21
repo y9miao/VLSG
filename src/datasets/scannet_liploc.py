@@ -14,7 +14,7 @@ from yaml import scan
 dataset_dir = osp.dirname(osp.abspath(__file__))
 src_dir = osp.dirname(dataset_dir)
 sys.path.append(src_dir)
-from utils import common, scan3r, open3d, torch_util
+from utils import common, scan3r, open3d, torch_util, scannet_utils
 from datasets.loaders import get_val_dataloader
 
 def get_transforms(mode, size):
@@ -34,7 +34,7 @@ def get_transforms(mode, size):
             ]
         )
 
-class Scan3rLipLocDataset(data.Dataset):
+class ScannetLipLocDataset(data.Dataset):
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -51,62 +51,50 @@ class Scan3rLipLocDataset(data.Dataset):
         self.sgaliner_model_name = cfg.sgaligner.model_name
         self.scan_type = cfg.sgaligner.scan_type
         
-        # data dir
-        self.data_root_dir = cfg.data.root_dir
-        scan_dirname = '' if self.scan_type == 'scan' else 'out'
-        scan_dirname = osp.join(scan_dirname, 'predicted') if self.use_predicted else scan_dirname
-        self.scans_dir = osp.join(cfg.data.root_dir, scan_dirname)
-        self.scans_files_dir = osp.join(self.scans_dir, 'files')
-        self.mode = 'orig' if self.split == 'train' else cfg.sgaligner.val.data_mode
-        self.scans_files_dir_mode = osp.join(self.scans_files_dir, self.mode)
+        # scannet scans info
+        self.split = split
+        scans_info_file = osp.join(cfg.data.root_dir, 'files', 'scans_{}.pkl'.format(split))
+        self.rooms_info = common.load_pkl_data(scans_info_file)
+        self.scan_ids = []
+        self.scan2room = {}
+        for room_id in self.rooms_info:
+            self.scan_ids += self.rooms_info[room_id]
+            for scan_id in self.rooms_info[room_id]:
+                self.scan2room[scan_id] = room_id
+        self.room2scans = self.rooms_info
+        self.scans_files_dir = osp.join(cfg.data.root_dir, 'files')
 
         # step
         self.step = self.cfg.data.img.img_step
-
-        # scene_img_dir
-        self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
-
-        # scans info
-        self.temporal = cfg.data.temporal
-        self.rescan = cfg.data.rescan
-        scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
-        all_scan_data = common.load_json(scan_info_file)
-        self.refscans2scans = {}
-        self.scans2refscans = {}
-        self.all_scans_split = []
-        for scan_data in all_scan_data:
-            ref_scan_id = scan_data['reference']
-            self.refscans2scans[ref_scan_id] = [ref_scan_id]
-            self.scans2refscans[ref_scan_id] = ref_scan_id
-            for scan in scan_data['scans']:
-                self.refscans2scans[ref_scan_id].append(scan['reference'])
-                self.scans2refscans[scan['reference']] = ref_scan_id
-        self.resplit = "resplit_" if cfg.data.resplit else ""
-        ref_scans_split = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
-        self.all_scans_split = []
-        ## get all scans within the split(ref_scan + rescan)
-        for ref_scan in ref_scans_split:
-            self.all_scans_split += self.refscans2scans[ref_scan]
-        if self.rescan:
-            self.scan_ids = self.all_scans_split
-        else:
-            self.scan_ids = ref_scans_split
             
         # load 2D image indexs
+        self.step = self.cfg.data.img.img_step
+        self.root_dir = cfg.data.root_dir
+        self.split_folder = osp.join(self.root_dir, self.split)
         self.image_idxs = {}
+        self.image_paths = {}   
         for scan_id in self.scan_ids:
-            self.image_idxs[scan_id] = scan3r.load_frame_idxs(self.scans_scenes_dir, scan_id, self.step)
+            self.image_idxs[scan_id] = scannet_utils.load_frame_idxs(self.split_folder, scan_id, self.step)
+            self.image_paths[scan_id] = scannet_utils.load_frame_paths(self.split_folder, scan_id, self.step)
             
-        # load 2D image paths
-        self.image_paths = {}
+        # load patch anno
+        self.scans_files_dir = osp.join(self.root_dir, 'files')
+        self.patch_anno = {}
+        patch_anno_name = cfg.data.gt_patch
+        patch_anno_th = cfg.data.gt_patch_th
+        self.patch_anno_folder = osp.join(self.scans_files_dir, patch_anno_name)
         for scan_id in self.scan_ids:
-            self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id, self.step)
-        
+            patch_anno_scan = common.load_pkl_data(osp.join(self.patch_anno_folder, "{}.pkl".format(scan_id)))
+            self.patch_anno[scan_id] = {}
+            # filter frames without enough patches
+            for frame_idx in self.image_idxs[scan_id]:
+                if frame_idx in patch_anno_scan:
+                    num_valid_patches = np.sum(patch_anno_scan[frame_idx]!=0)
+                    if num_valid_patches * 1.0 / patch_anno_scan[frame_idx].size > patch_anno_th:
+                        self.patch_anno[scan_id][frame_idx] = patch_anno_scan[frame_idx]
+            
         # img transform
         self.transform = get_transforms(self.split, self.cfg.data.img.img_size)
-        
-        # load transform matrix from rescan to ref
-        self.trans_rescan2ref = scan3r.read_transform_mat(scan_info_file) 
         
         # load 3D range images pointclouds
         self.loadScansRangeImage()
@@ -119,14 +107,14 @@ class Scan3rLipLocDataset(data.Dataset):
         if self.split == 'val' or self.split == 'test':
             self.candidate_scans = {}
             for scan_id in self.scan_ids:
-                self.candidate_scans[scan_id] = scan3r.sampleCandidateScenesForEachScan(
-                    scan_id, self.scan_ids, self.refscans2scans, self.scans2refscans, self.num_scenes)
+                self.candidate_scans[scan_id] = scannet_utils.sampleCandidateScenesForEachScan(
+                    scan_id, self.scan_ids, self.rooms_info, self.scan2room, self.num_scenes)
         
     def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
         candidate_scans = []
-        scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
+        scans_same_scene = self.room2scans[self.scan2room[scan_id]]
         # sample other scenes
-        for scan in self.all_scans_split:
+        for scan in self.scan_ids:
             if scan not in scans_same_scene:
                 candidate_scans.append(scan)
         sampled_scans = random.sample(candidate_scans, num_scenes)
@@ -173,26 +161,17 @@ class Scan3rLipLocDataset(data.Dataset):
     
     def loadScanRange(self, scan_id, fov_up, fov_down, range_min, range_max, range_W, range_H):
         if self.cfg.data.pointcloud.use_mesh:
-            mesh_file = osp.join(self.scans_scenes_dir, scan_id, "labels.instances.annotated.v2.ply")
-            proj_range, proj_color = scan3r.loadScanMeshRange(mesh_file, fov_up, fov_down, range_min, range_max, range_H, range_W)
+            mesh_file = scannet_utils.load_mesh_path(self.split_folder, scan_id, "{}_vh_clean_2.labels.ply".format(scan_id))
+            proj_range, proj_color = scan3r.loadScanMeshRange(mesh_file, fov_up, fov_down, range_min, 
+                                                              range_max, range_H, range_W)
             return proj_range, proj_color
         else:
-            # load scan pcs
-            pcs_with_color = scan3r.load_scan_pcs(
-                    self.scans_scenes_dir, scan_id, self.trans_rescan2ref, color=True)
-            pcs = pcs_with_color[:,:4]
-            colors = pcs_with_color[:,4:]
-            # project range image
-            pcs_center  = np.mean(pcs, axis=0)
-            proj_range, proj_color = scan3r.createRangeImage(
-                pcs, colors, pcs_center, fov_up, fov_down, range_W, range_H, [range_min, range_max])
-            return proj_range, proj_color
-
+            raise NotImplementedError("Not implemented for pointcloud")
     
-    def sampleCrossTime(self, scan_id):
+    def sampleCrossRooms(self, scan_id):
         candidate_scans = []
-        ref_scan = self.scans2refscans[scan_id]
-        for scan in self.refscans2scans[ref_scan]:
+        room_id = self.scan2room[scan_id]
+        for scan in self.rooms_info[room_id]:
             if scan != scan_id:
                 candidate_scans.append(scan)
         if len(candidate_scans) == 0:
@@ -205,16 +184,33 @@ class Scan3rLipLocDataset(data.Dataset):
         data_items = []
         # iterate over scans
         for scan_id in self.scan_ids:
-            # obj_3D_embeddings_scan = self.obj_3D_embeddings[scan_id]
-            # iterate over images
-            for frame_idx in self.image_paths[scan_id]:
-                data_item = {}
-                data_item['scan_id'] = scan_id
-                data_item['frame_idx'] = frame_idx
-                data_item['img_path'] = self.image_paths[scan_id][frame_idx]
-                data_items.append(data_item)
+            # sample rescan
+            if self.split == 'train':
+                for frame_idx in self.image_paths[scan_id]:
+                    if frame_idx not in self.patch_anno[scan_id]:
+                        continue
+                    data_item = {}
+                    data_item['scan_id'] = scan_id
+                    data_item['rescan_id'] = None
+                    data_item['frame_idx'] = frame_idx
+                    data_item['img_path'] = self.image_paths[scan_id][frame_idx]
+                    data_items.append(data_item)
+            else:
+                rescan_id = self.sampleCrossRooms(scan_id)
+                if rescan_id is None:
+                    continue
+                # iterate over images
+                for frame_idx in self.image_paths[scan_id]:
+                    if frame_idx not in self.patch_anno[scan_id]:
+                        continue
+                    data_item = {}
+                    data_item['scan_id'] = scan_id
+                    data_item['rescan_id'] = rescan_id
+                    data_item['frame_idx'] = frame_idx
+                    data_item['img_path'] = self.image_paths[scan_id][frame_idx]
+                    data_items.append(data_item)
                     
-        random.shuffle(data_items)
+        random.shuffle(data_items) if self.split == 'train' else None
         # if debug with single scan
         if self.cfg.mode == "debug_few_scan":
             return data_items[:1]
@@ -223,6 +219,7 @@ class Scan3rLipLocDataset(data.Dataset):
     def dataItem2DataDict(self, data_item):
         # img info
         scan_id = data_item['scan_id']
+        rescan_id = data_item['rescan_id']
         frame_idx = data_item['frame_idx']
         
         img_path = data_item['img_path']
@@ -232,7 +229,7 @@ class Scan3rLipLocDataset(data.Dataset):
         img = np.transpose(img, (2, 0, 1)) # channel first
 
         # 3D info
-        range_image = self.range_imgs[scan_id]
+        range_image = self.range_imgs[scan_id] if self.split == 'train' else self.range_imgs[rescan_id].copy()
         range_image = self.transform(image=range_image)['image']
         range_image = np.transpose(range_image, (2, 0, 1)) # channel first
 
@@ -242,16 +239,15 @@ class Scan3rLipLocDataset(data.Dataset):
         data_dict['range_image'] = range_image
         data_dict['img'] = img
         
+        # sample across scenes for room retrieval
         if self.split != 'train':
-            # sample across scenes for room retrieval
             candidate_scans = self.candidate_scans[scan_id]
             curr_scan = scan_id
-            temporal_scan = self.sampleCrossTime(scan_id)
-            
             # save scan_id
             data_dict['candidate_scan_ids'] = candidate_scans
             data_dict['curr_scan_id'] = curr_scan
-            data_dict['temporal_scan_id'] = temporal_scan
+            data_dict['temporal_scan_id'] = rescan_id
+
         return data_dict
     
     def getRangeImagesTensor(self, scan_id_list):
@@ -266,7 +262,6 @@ class Scan3rLipLocDataset(data.Dataset):
         return range_image_tensor
     
     def collateBatchDicts(self, batch):  
-        
         batch_size = len(batch)
         data_dict = {}
         data_dict['batch_size'] = batch_size
@@ -285,16 +280,14 @@ class Scan3rLipLocDataset(data.Dataset):
         np.fill_diagonal(e2j_matrix, 0)
         for i in range(batch_size):
             for j in range(i+1, batch_size):
-                if self.scans2refscans[batch[i]['scan_id']] == self.scans2refscans[batch[j]['scan_id']]:
+                if self.scan2room[batch[i]['scan_id']] == self.scan2room[batch[j]['scan_id']]:
                     e2j_matrix[i, j] = 0
                     e2j_matrix[j, i] = 0
         data_dict['e2j_matrix'] = torch.from_numpy(e2j_matrix).float()
-        
         if self.split != 'train':
             data_dict['candidate_scan_ids_list'] = [data['candidate_scan_ids'] for data in batch]
             data_dict['curr_scan_id_list'] = [data['curr_scan_id'] for data in batch]
             data_dict['temporal_scan_id_list'] = [data['temporal_scan_id'] for data in batch]
-        
         if len(batch) > 0:
             return data_dict
         else:
@@ -314,16 +307,16 @@ class Scan3rLipLocDataset(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week9/trainval_liploc_360_mesh/scan3r_liploc_train.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week12/trainval_liploc/scannet_liploc.yaml"
     cfg = update_config(config, cfg_file, ensure_dir=False)
     
     # dataset
-    dataset = Scan3rLipLocDataset(cfg, 'test')
+    dataset = ScannetLipLocDataset(cfg, 'val')
     
     batch = dataset.collate_fn([dataset[0], dataset[1]])
     
     # # data_loder
-    # dataset_, val_dataloader = get_val_dataloader(cfg, Scan3rLipLocDataset)
+    # dataset_, val_dataloader = get_val_dataloader(cfg, ScannetLipLocDataset)
     # total_iterations = len(val_dataloader)
     # pbar = tqdm.tqdm(enumerate(val_dataloader), total=total_iterations)
     # for iteration, data_dict in pbar:

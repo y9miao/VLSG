@@ -27,7 +27,7 @@ src_dir = osp.join(workspace_dir, 'src')
 sys.path.append(workspace_dir)
 sys.path.append(src_dir)
 
-from utils import common, scan3r
+from utils import common, scan3r, scannet_utils
 
 # openmask3d config
 top_k = 5
@@ -59,85 +59,50 @@ def mask2box_multi_level(mask: torch.Tensor, level, expansion_ratio):
 class ObjVisualEmbGen(data.Dataset):
     def __init__(self, cfg, split, vis=False):
         self.cfg = cfg
-        
-        # undefined patch anno id
         self.undefined = 0
-        
-        # set random seed
-        self.seed = cfg.seed
-        random.seed(self.seed)
-        
-        # sgaliner related cfg
-        self.split = split
-        self.use_predicted = cfg.sgaligner.use_predicted
-        self.sgaliner_model_name = cfg.sgaligner.model_name
-        self.scan_type = cfg.sgaligner.scan_type
-        
-        # data dir
-        self.data_root_dir = cfg.data.root_dir
-        scan_dirname = '' if self.scan_type == 'scan' else 'out'
-        scan_dirname = osp.join(scan_dirname, 'predicted') if self.use_predicted else scan_dirname
-        self.scans_dir = osp.join(cfg.data.root_dir, scan_dirname)
-        self.scans_files_dir = osp.join(self.scans_dir, 'files')
-        self.mode = 'orig' if self.split == 'train' else cfg.sgaligner.val.data_mode
-        self.scans_files_dir_mode = osp.join(self.scans_files_dir, self.mode)
-
-        # 2D images
-        self.image_w = self.cfg.data.img.w
-        self.image_h = self.cfg.data.img.h
-        self.image_resize_w = self.cfg.data.img_encoding.resize_w
-        self.image_resize_h = self.cfg.data.img_encoding.resize_h
-        self.img_rotate = self.cfg.data.img_encoding.img_rotate
         self.vis = vis
-        
-        # 2D_patches
-        self.image_patch_w = self.cfg.data.img_encoding.patch_w
-        self.image_patch_h = self.cfg.data.img_encoding.patch_h
-        self.step = self.cfg.data.img.img_step
 
-        # scene_img_dir
-        self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
+        # scannet scans info
+        self.split = split
+        scans_info_file = osp.join(cfg.data.root_dir, 'files', 'scans_{}.pkl'.format(split))
+        self.rooms_info = common.load_pkl_data(scans_info_file)
+        self.scan_ids = []
+        self.scan2room = {}
+        for room_id in self.rooms_info:
+            self.scan_ids += self.rooms_info[room_id]
+            for scan_id in self.rooms_info[room_id]:
+                self.scan2room[scan_id] = room_id
         
-        # if split is val, then use all object from other scenes as negative samples
-        # if room_retrieval, then use load additional data items
-        
-        # scans info
-        self.temporal = cfg.data.temporal
-        self.rescan = cfg.data.rescan
-        scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
-        all_scan_data = common.load_json(scan_info_file)
-        self.refscans2scans = {}
-        self.scans2refscans = {}
-        self.all_scans_split = []
-        for scan_data in all_scan_data:
-            ref_scan_id = scan_data['reference']
-            self.refscans2scans[ref_scan_id] = [ref_scan_id]
-            self.scans2refscans[ref_scan_id] = ref_scan_id
-            for scan in scan_data['scans']:
-                self.refscans2scans[ref_scan_id].append(scan['reference'])
-                self.scans2refscans[scan['reference']] = ref_scan_id
-        self.resplit = "resplit_" if cfg.data.resplit else ""
-        ref_scans_split = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
-        self.all_scans_split = []
-        ## get all scans within the split(ref_scan + rescan)
-        for ref_scan in ref_scans_split:
-            self.all_scans_split += self.refscans2scans[ref_scan]
-        if self.rescan:
-            self.scan_ids = self.all_scans_split
-        else:
-            self.scan_ids = ref_scans_split
-            
-        ## image patches 
-        self.image_path = {}
+        # get image paths
+        self.img_step = cfg.data.img.img_step
+        self.data_split_dir = osp.join(cfg.data.root_dir, split)
+        self.img_paths = {}
         for scan_id in self.scan_ids:
-            self.image_path[scan_id] = scan3r.load_frame_paths(self.data_root_dir, scan_id)
+            img_paths = scannet_utils.load_frame_paths(self.data_split_dir, scan_id, self.img_step)
+            self.img_paths[scan_id] = img_paths
                 
         # load 2D gt obj id annotation
-        self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
-        self.obj_2D_annos_pathes = {}
+        self.scans_files_dir = osp.join(cfg.data.root_dir, 'files')
+        gt_patch_anno_name = cfg.data.gt_patch
+        self.patch_anno_folder = osp.join(self.scans_files_dir, gt_patch_anno_name)
+        self.patch_anno = {}
         for scan_id in self.scan_ids:
-            anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
-            self.obj_2D_annos_pathes[scan_id] = anno_2D_file
+            patch_anno_scan = common.load_pkl_data(osp.join(self.patch_anno_folder, "{}.pkl".format(scan_id)))
+            self.patch_anno[scan_id] = {}
+            # filter frames without enough patches
+            for frame_idx in self.img_paths[scan_id]:
+                if frame_idx in patch_anno_scan:
+                    self.patch_anno[scan_id][frame_idx] = patch_anno_scan[frame_idx]
+        
+        # image info 
+        self.image_w = cfg.data.img.w
+        self.image_h = cfg.data.img.h
+        self.img_resize_w = cfg.data.img.resize_w
+        self.img_resize_h = cfg.data.img.resize_h
+        self.patch_w = cfg.data.img.patch_w
+        self.patch_h = cfg.data.img.patch_h
+        self.patch_w_size = self.img_resize_w // self.patch_w
+        self.patch_h_size = self.img_resize_h // self.patch_h
             
         # obj visual emb config
         self.topk = top_k
@@ -164,15 +129,11 @@ class ObjVisualEmbGen(data.Dataset):
     def generateObjVisualEmbScan(self, scan_id):
         obj_image_votes = {}
         
-        # load gt 2D obj anno
-        obj_anno_2D_file = self.obj_2D_annos_pathes[scan_id]
-        obj_anno_2D = common.load_pkl_data(obj_anno_2D_file)
-        
         # iterate over all frames
-        for frame_idx in obj_anno_2D:
-            obj_2D_anno_frame = obj_anno_2D[frame_idx]
+        for frame_idx in self.patch_anno[scan_id]:
+            patch_anno_frame = self.patch_anno[scan_id][frame_idx]
             ## process 2D anno
-            obj_ids, counts = np.unique(obj_2D_anno_frame, return_counts=True)
+            obj_ids, counts = np.unique(patch_anno_frame, return_counts=True)
             for idx in range(len(obj_ids)):
                 obj_id = obj_ids[idx]
                 count = counts[idx]
@@ -183,6 +144,7 @@ class ObjVisualEmbGen(data.Dataset):
                 if frame_idx not in obj_image_votes[obj_id]:
                     obj_image_votes[obj_id][frame_idx] = 0
                 obj_image_votes[obj_id][frame_idx] = count
+                
         ## select top K frames for each obj
         obj_image_votes_topK = {}
         for obj_id in obj_image_votes:
@@ -200,26 +162,24 @@ class ObjVisualEmbGen(data.Dataset):
             obj_visual_emb[obj_id] = {}
             for frame_idx in obj_image_votes_topK_frames:
                 obj_visual_emb[obj_id][frame_idx] = self.generate_visual_emb(
-                    scan_id, frame_idx, obj_id, obj_anno_2D[frame_idx])    
+                    scan_id, frame_idx, obj_id, self.patch_anno[scan_id][frame_idx])    
         obj_patch_info = {
             'obj_visual_emb': obj_visual_emb,
             'obj_image_votes_topK': obj_image_votes_topK,
         }
         return obj_patch_info
     
-    def generate_visual_emb(self, scan_id, frame_idx, obj_id, gt_anno):
-        if self.img_rotate:
-            obj_2D_anno_f_rot = gt_anno.transpose(1, 0)
-            obj_2D_anno_f_rot = np.flip(obj_2D_anno_f_rot, 1)
+    def generate_visual_emb(self, scan_id, frame_idx, obj_id, gt_patch_anno):
         # load image
-        image_path = self.image_path[scan_id][frame_idx]
+        image_path = self.img_paths[scan_id][frame_idx]
         image = Image.open(image_path)
-        if self.img_rotate:
-            image = image.transpose(Image.ROTATE_270)
-        
+        image = image.resize((self.img_resize_w, self.img_resize_h))
+
             
         # get obj mask
-        obj_mask = obj_2D_anno_f_rot == obj_id
+        patch_mask = gt_patch_anno == obj_id
+        obj_mask =  cv2.resize(patch_mask.astype(np.uint8), (self.img_resize_w, self.img_resize_h),
+                               interpolation=cv2.INTER_NEAREST)
         # extract multi-level crop clip embs
         images_crops = []
         for level in range(num_of_levels):
@@ -246,10 +206,10 @@ class ObjVisualEmbGen(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/datan"
+    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/data"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/OpenMask3D/openmask3D_emb_scannet.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_ds = ObjVisualEmbGen(cfg, split='val', vis = True)
+    scan3r_ds = ObjVisualEmbGen(cfg, split='test', vis = False)
     scan3r_ds.generateObjVisualEmb()
     # obj_patch_info = scan3r_ds.generateObjVisualEmbScan("6a36053b-fa53-2915-9716-6b5361c7791a")
     breakpoint=None

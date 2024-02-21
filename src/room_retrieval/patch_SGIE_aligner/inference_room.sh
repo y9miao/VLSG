@@ -3,7 +3,7 @@ export VLSG_SPACE=/home/yang/big_ssd/Scan3R/VLSG
 # export SCAN3R DATA ROOR
 export Scan3R_ROOT_DIR=/home/yang/big_ssd/Scan3R/3RScan
 # export training out dir
-export ROOM_RETRIEVAL_OUT_DIR=/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PatchObjMatch
+export ROOM_RETRIEVAL_OUT_DIR=/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PaperMetric/Ours
 # export resume folder 
 export RESUME_DIR=/home/yang/big_ssd/Scan3R/VLSG/checkpoint
 # export conda env

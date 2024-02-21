@@ -73,21 +73,25 @@ class MultiModalEncoder(nn.Module):
         self.attn_dropout = attn_dropout
         self.instance_norm = instance_norm
         self.inner_view_num = len(self.modules) # Point Net + Structure Encoder + Meta Encoder
-
-        self.meta_embedding_rel = nn.Linear(self.rel_dim, self.emb_dim)
-        self.meta_embedding_attr = nn.Linear(self.attr_dim, self.emb_dim)
         
         if 'point' in self.modules:
             self.object_encoder = PointNetfeat(global_feat=True, batch_norm=True, point_size=3, input_transform=False, feature_transform=False, out_size=self.pt_out_dim)
+            self.object_embedding = nn.Linear(self.pt_out_dim, self.emb_dim)
         elif 'pct' in self.modules:
             self.object_encoder = NaivePCT()
+            self.object_embedding = nn.Linear(self.pt_out_dim, self.emb_dim)
         # else:
         #     raise NotImplementedError
+        if 'gat' in self.modules:
+            self.structure_encoder = MultiGAT(n_units=self.hidden_units, n_heads=self.heads, dropout=self.dropout)
+            self.structure_embedding = nn.Linear(256, self.emb_dim)
+            
+        if 'rel' in self.modules:
+            self.meta_embedding_rel = nn.Linear(self.rel_dim, self.emb_dim)
         
-        self.object_embedding = nn.Linear(self.pt_out_dim, self.emb_dim)
-        
-        self.structure_encoder = MultiGAT(n_units=self.hidden_units, n_heads=self.heads, dropout=self.dropout)
-        self.structure_embedding = nn.Linear(256, self.emb_dim)
+        if 'attr' in self.modules:
+            self.meta_embedding_attr = nn.Linear(self.attr_dim, self.emb_dim)
+            
         if 'img_patch' in self.modules:
             self.img_patch_encoder = PatchAggregator(d_model=img_feat_dim, nhead=2, num_layers=1, dropout=self.dropout)
             self.img_patch_embedding = nn.Linear(img_feat_dim, self.emb_dim)
@@ -97,17 +101,12 @@ class MultiModalEncoder(nn.Module):
         self.fusion = MultiModalFusion(modal_num=self.inner_view_num, with_weight=1)
         
     def forward(self, data_dict):
-        object_points = data_dict['tot_obj_pts'].permute(0, 2, 1)
-        bow_vec_object_attr_feats = data_dict['tot_bow_vec_object_attr_feats'].float() 
-        bow_vec_object_edge_feats = data_dict['tot_bow_vec_object_edge_feats'].float()
-        rel_pose = data_dict['tot_rel_pose'].float()
-        
         batch_size = data_dict['batch_size']
-        
         embs = {}
 
         for module in self.modules:
             if module == 'gat':
+                rel_pose = data_dict['tot_rel_pose'].float()
                 structure_embed = None
                 start_object_idx = 0
                 start_edge_idx = 0
@@ -129,13 +128,16 @@ class MultiModalEncoder(nn.Module):
                 emb = self.structure_embedding(structure_embed)
             
             elif module in ['point', 'pct']:
+                object_points = data_dict['tot_obj_pts'].permute(0, 2, 1)
                 emb = self.object_encoder(object_points)
                 emb = self.object_embedding(emb)
 
             elif module == 'rel':
+                bow_vec_object_edge_feats = data_dict['tot_bow_vec_object_edge_feats'].float()
                 emb = self.meta_embedding_rel(bow_vec_object_edge_feats)
             
             elif module == 'attr':
+                bow_vec_object_attr_feats = data_dict['tot_bow_vec_object_attr_feats'].float() 
                 emb = self.meta_embedding_attr(bow_vec_object_attr_feats)
                 
             elif module == 'img_patch':

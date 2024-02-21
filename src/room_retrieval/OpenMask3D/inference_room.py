@@ -34,6 +34,7 @@ from models.patch_SGIE_aligner import PatchSGIEAligner
 # dataset
 from datasets.loaders import get_test_dataloader, get_val_dataloader
 from datasets.scan3r_openmask3d import Scan3rOpen3DDataset
+from datasets.scannet_openmask3d import ScannetOpen3DDataset
 
 # use PathObjAligner for room retrieval
 class RoomRetrivalScore():
@@ -42,26 +43,18 @@ class RoomRetrivalScore():
         # cfg
         self.cfg = cfg 
         self.method_name = cfg.val.room_retrieval.method_name
-        self.epsilon_th = cfg.val.room_retrieval.epsilon_th
-        
-        # sgaliner related cfg
-        self.use_predicted = cfg.sgaligner.use_predicted
-        self.sgaliner_model_name = cfg.sgaligner.model_name
-        self.scan_type = cfg.sgaligner.scan_type
-        # data dir
-        self.data_root_dir = cfg.data.root_dir
-        scan_dirname = '' if self.scan_type == 'scan' else 'out'
-        scan_dirname = osp.join(scan_dirname, 'predicted') if self.use_predicted else scan_dirname
-        self.scans_dir = osp.join(cfg.data.root_dir, scan_dirname)
-        self.scans_files_dir = osp.join(self.scans_dir, 'files')
-        self.cate_file = osp.join(self.scans_files_dir, 'scannet40_classes.txt')
-        # get cate info
-        self.cate_info = common.idx2name(self.cate_file)
         
         # dataloader
+        if self.cfg.data.name == "Scan3R":
+            dataset = Scan3rOpen3DDataset
+        elif self.cfg.data.name == "Scannet":
+            dataset = ScannetOpen3DDataset
+        else:
+            raise ValueError(f"Dataset {self.cfg.data.name} not supported.")
+            
         start_time = time.time()
-        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = Scan3rOpen3DDataset)
-        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = Scan3rOpen3DDataset)
+        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = dataset)
+        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = dataset)
         # register dataloader
         self.val_data_loader = val_data_loader
         self.val_dataset = val_dataset

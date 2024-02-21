@@ -14,10 +14,10 @@ from yaml import scan
 dataset_dir = osp.dirname(osp.abspath(__file__))
 src_dir = osp.dirname(dataset_dir)
 sys.path.append(src_dir)
-from utils import common, scan3r, open3d, torch_util
+from utils import common, scan3r, open3d, torch_util, scannet_utils
 from datasets.loaders import get_val_dataloader, get_train_dataloader
 
-class Scan3rOpen3DDataset(data.Dataset):
+class ScannetOpen3DDataset(data.Dataset):
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -27,65 +27,51 @@ class Scan3rOpen3DDataset(data.Dataset):
         # set random seed
         self.seed = cfg.seed
         random.seed(self.seed)
-        
-        # sgaliner related cfg
-        self.split = split
-        self.use_predicted = cfg.sgaligner.use_predicted
-        self.sgaliner_model_name = cfg.sgaligner.model_name
-        self.scan_type = cfg.sgaligner.scan_type
-        
-        # data dir
-        self.data_root_dir = cfg.data.root_dir
-        scan_dirname = '' if self.scan_type == 'scan' else 'out'
-        scan_dirname = osp.join(scan_dirname, 'predicted') if self.use_predicted else scan_dirname
-        self.scans_dir = osp.join(cfg.data.root_dir, scan_dirname)
-        self.scans_files_dir = osp.join(self.scans_dir, 'files')
-        self.mode = 'orig' if self.split == 'train' else cfg.sgaligner.val.data_mode
-        self.scans_files_dir_mode = osp.join(self.scans_files_dir, self.mode)
 
         # step
         self.step = self.cfg.data.img.img_step
 
-        # scene_img_dir
-        self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
-
-        # scans info
-        self.temporal = cfg.data.temporal
-        self.rescan = cfg.data.rescan
-        scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
-        all_scan_data = common.load_json(scan_info_file)
-        self.refscans2scans = {}
-        self.scans2refscans = {}
-        self.all_scans_split = []
-        for scan_data in all_scan_data:
-            ref_scan_id = scan_data['reference']
-            self.refscans2scans[ref_scan_id] = [ref_scan_id]
-            self.scans2refscans[ref_scan_id] = ref_scan_id
-            for scan in scan_data['scans']:
-                self.refscans2scans[ref_scan_id].append(scan['reference'])
-                self.scans2refscans[scan['reference']] = ref_scan_id
-        self.resplit = "resplit_" if cfg.data.resplit else ""
-        ref_scans_split = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
-        self.all_scans_split = []
-        ## get all scans within the split(ref_scan + rescan)
-        for ref_scan in ref_scans_split:
-            self.all_scans_split += self.refscans2scans[ref_scan]
-        if self.rescan:
-            self.scan_ids = self.all_scans_split
-        else:
-            self.scan_ids = ref_scans_split
-            
-        # load 2D image indexs
-        self.image_idxs = {}
+        # scannet scans info
+        self.split = split
+        scans_info_file = osp.join(cfg.data.root_dir, 'files', 'scans_{}.pkl'.format(split))
+        self.rooms_info = common.load_pkl_data(scans_info_file)
+        self.scan_ids = []
+        self.scan2room = {}
+        for room_id in self.rooms_info:
+            self.scan_ids += self.rooms_info[room_id]
+            for scan_id in self.rooms_info[room_id]:
+                self.scan2room[scan_id] = room_id
+                
+        # get image paths
+        self.img_step = cfg.data.img.img_step
+        self.data_split_dir = osp.join(cfg.data.root_dir, split)
+        self.img_paths = {}
         for scan_id in self.scan_ids:
-            self.image_idxs[scan_id] = scan3r.load_frame_idxs(self.scans_scenes_dir, scan_id, self.step)
-            
+            img_paths = scannet_utils.load_frame_paths(self.data_split_dir, scan_id, self.img_step)
+            self.img_paths[scan_id] = img_paths
+        
         # load 2D image features path
+        self.scans_files_dir = osp.join(cfg.data.root_dir, 'files')
         self.feature_2D_folder_name = cfg.data.img_encoding.feature_dir
-        self.img_features_path = {}
+        self.feature_folder = osp.join(self.scans_files_dir, self.feature_2D_folder_name)
+        self.features_path = {}
         for scan_id in self.scan_ids:
-            img_features_scan_file = osp.join(self.scans_files_dir, self.feature_2D_folder_name, "{}.pkl".format(scan_id))
-            self.img_features_path[scan_id] = img_features_scan_file
+            self.features_path[scan_id] = osp.join(self.feature_folder, "{}.pkl".format(scan_id))
+            
+        # load patch anno
+        self.patch_anno = {}
+        patch_anno_name = cfg.data.gt_patch
+        patch_anno_th = cfg.data.gt_patch_th
+        self.patch_anno_folder = osp.join(self.scans_files_dir, patch_anno_name)
+        for scan_id in self.scan_ids:
+            patch_anno_scan = common.load_pkl_data(osp.join(self.patch_anno_folder, "{}.pkl".format(scan_id)))
+            self.patch_anno[scan_id] = {}
+            # filter frames without enough patches
+            for frame_idx in self.img_paths[scan_id]:
+                if frame_idx in patch_anno_scan:
+                    num_valid_patches = np.sum(patch_anno_scan[frame_idx]!=0)
+                    if num_valid_patches * 1.0 / patch_anno_scan[frame_idx].size > patch_anno_th:
+                        self.patch_anno[scan_id][frame_idx] = patch_anno_scan[frame_idx]
             
         # load 3D obj embeddings and info
         self.feat_dim = cfg.data.feat_dim
@@ -123,41 +109,10 @@ class Scan3rOpen3DDataset(data.Dataset):
         if self.split == 'val' or self.split == 'test':
             self.candidate_scans = {}
             for scan_id in self.scan_ids:
-                self.candidate_scans[scan_id] = scan3r.sampleCandidateScenesForEachScan(
-                    scan_id, self.scan_ids, self.refscans2scans, self.scans2refscans, self.num_scenes)
-            
+                self.candidate_scans[scan_id] = scannet_utils.sampleCandidateScenesForEachScan(
+                    scan_id, self.scan_ids, self.rooms_info, self.scan2room, self.num_scenes)
+        break_point = None
         
-    def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
-        candidate_scans = []
-        scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
-        # sample other scenes
-        for scan in self.all_scans_split:
-            if scan not in scans_same_scene:
-                candidate_scans.append(scan)
-        sampled_scans = random.sample(candidate_scans, num_scenes)
-        return sampled_scans
-    
-    def sampleCrossScenes(self, scan_id, num_scenes):
-        candidate_scans = []
-        scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
-        # sample other scenes
-        for scan in self.all_scans_split:
-            if scan not in scans_same_scene:
-                candidate_scans.append(scan)
-        sampled_scans = random.sample(candidate_scans, num_scenes)
-        return sampled_scans
-    
-    def sampleCrossTime(self, scan_id):
-        candidate_scans = []
-        ref_scan = self.scans2refscans[scan_id]
-        for scan in self.refscans2scans[ref_scan]:
-            if scan != scan_id:
-                candidate_scans.append(scan)
-        if len(candidate_scans) == 0:
-            return None
-        else:
-            sampled_scan = random.sample(candidate_scans, 1)[0]
-            return sampled_scan
     
     def generateDataItems(self):
         data_items = []
@@ -165,7 +120,9 @@ class Scan3rOpen3DDataset(data.Dataset):
         for scan_id in self.scan_ids:
             # obj_3D_embeddings_scan = self.obj_3D_embeddings[scan_id]
             # iterate over images
-            for frame_idx in self.image_idxs[scan_id]:
+            for frame_idx in self.img_paths[scan_id]:
+                if frame_idx not in self.patch_anno[scan_id]:
+                    continue
                 data_item = {}
                 data_item['scan_id'] = scan_id
                 data_item['frame_idx'] = frame_idx
@@ -177,6 +134,18 @@ class Scan3rOpen3DDataset(data.Dataset):
             return data_items[:1]
         return data_items
     
+    def sampleCrossRooms(self, scan_id):
+        candidate_scans = []
+        room_id = self.scan2room[scan_id]
+        for scan in self.rooms_info[room_id]:
+            if scan != scan_id:
+                candidate_scans.append(scan)
+        if len(candidate_scans) == 0:
+            return None
+        else:
+            sampled_scan = random.sample(candidate_scans, 1)[0]
+            return sampled_scan
+    
     def dataItem2DataDict(self, data_item):
         data_dict = {}
         
@@ -184,7 +153,7 @@ class Scan3rOpen3DDataset(data.Dataset):
         img_scan_id = data_item['scan_id']
         scan_id = data_item['scan_id']
         frame_idx = data_item['frame_idx']
-        img_features_path = self.img_features_path[img_scan_id]
+        img_features_path = self.features_path[img_scan_id]
 
         data_dict['scan_id'] = scan_id
         data_dict['frame_idx'] = frame_idx
@@ -194,11 +163,11 @@ class Scan3rOpen3DDataset(data.Dataset):
         if self.split != 'train':
             # sample across scenes for room retrieval
             candidate_scans = self.candidate_scans[scan_id]
-            temporal_scan = self.sampleCrossTime(scan_id)
+            # temporal_scan = self.sampleCrossTime(scan_id)
             
             # save scan_id
             data_dict['candidate_scan_ids'] = candidate_scans
-            data_dict['temporal_scan_id'] = temporal_scan
+            data_dict['temporal_scan_id'] = scan_id
                 
         return data_dict
     
@@ -256,8 +225,8 @@ class Scan3rOpen3DDataset(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/src/room_retrieval/OpenMask3D/openmask3D_retrieval.yaml"
+    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/data"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/src/room_retrieval/OpenMask3D/openmask3D_retrieval_scannet.yaml"
     cfg = update_config(config, cfg_file, ensure_dir=False)
     # scan3r_ds = Scan3rLidarClipDataset(cfg, split='val')
     # print(len(scan3r_ds))
@@ -285,10 +254,10 @@ if __name__ == '__main__':
     # vis.run()
     
     # data_loder
-    dataset_, val_dataloader = get_val_dataloader(cfg, Scan3rOpen3DDataset)
+    dataset_, val_dataloader = get_val_dataloader(cfg, ScannetOpen3DDataset)
     total_iterations = len(val_dataloader)
     pbar = tqdm.tqdm(enumerate(val_dataloader), total=total_iterations)
-    # train_dataset, train_dataloader = get_train_dataloader(cfg, Scan3rOpen3DDataset)
+    # train_dataset, train_dataloader = get_train_dataloader(cfg, ScannetOpen3DDataset)
     # total_train_iterations = len(train_dataloader)
     for i, data in pbar:
         print(i)

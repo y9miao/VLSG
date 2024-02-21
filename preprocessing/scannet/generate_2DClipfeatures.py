@@ -25,25 +25,11 @@ from tqdm.auto import tqdm
 from typing import Literal, Tuple, List, Union
 from dataclasses import dataclass, field
 
-# Dino v2
-import tyro
-import time
-from dinov2_utils import DinoV2ExtractFeatures
-from dataclasses import dataclass
-@dataclass
-class LocalArgs:
-    """
-        Local arguments for the program
-    """
-    # Dino_v2 properties (parameters)
-    desc_layer: int = 31
-    desc_facet: Literal["query", "key", "value", "token"] = "value"
-    num_c: int = 32
-    # device
-    device = torch.device("cuda")
-larg = tyro.cli(LocalArgs)
+# CLIP
+import clip
+from clip.model import CLIP
 
-class ScannetDinov2Generator():
+class ScannetClipGenerator():
     def __init__(self, cfg, split):
         self.cfg = cfg
         
@@ -74,27 +60,17 @@ class ScannetDinov2Generator():
         self.inference_step = cfg.data.inference_step
         self.image_resize_w = self.cfg.data.resize_w
         self.image_resize_h = self.cfg.data.resize_h
+        
+        # CLIP info
+        self.model_name = cfg.model.name
+        self.model_version = cfg.model.version
                 
     def register_model(self):
         
-        self.larg = larg
-        desc_layer = larg.desc_layer
-        desc_facet = larg.desc_facet
-        device = larg.device
-        self.device = larg.device
-        
-        # Dinov2 extractor
-        if "extractor" in globals():
-            print(f"Extractor already defined, skipping")
-        else:
-            self.extractor = DinoV2ExtractFeatures("dinov2_vitg14", desc_layer,
-                desc_facet, device=device)
-
-        self.base_tf = tvf.Compose([
-            tvf.ToTensor(),
-            tvf.Normalize(mean=[0.485, 0.456, 0.406], 
-                            std=[0.229, 0.224, 0.225])
-        ])
+        clip_model, clip_preprocess = clip.load(self.model_version, jit=False)
+        self.clip_model = clip_model
+        self.clip_preprocess = clip_preprocess
+        self.device = torch.device("cuda")
         
     def generateFeatures(self):
         img_num = 0
@@ -127,35 +103,33 @@ class ScannetDinov2Generator():
             frame_idxs_sublist = frame_idxs_list[start_idx:end_idx]
             
             tensor_idxs_to_frame_idxs = {}
-            img_tensors_list = []
+            img_pt_list = []
             if len(frame_idxs_sublist) == 0:
                 continue
             
             for idx, frame_idx in enumerate(frame_idxs_sublist):
                 img_path = img_paths[frame_idx]
                 img  = Image.open(img_path).convert('RGB')
-                h_new, w_new = (self.image_resize_h // 14) * 14, (self.image_resize_w // 14) * 14
-                img_pt = img.resize((w_new, h_new), Image.BICUBIC)
-                
-                img_pt = self.base_tf(img_pt)
-                img_tensors_list.append(img_pt)
+                img_pt = self.clip_preprocess(img).unsqueeze(0).to(self.device)
+                img_pt_list.append(img_pt)
                 tensor_idxs_to_frame_idxs[idx] = frame_idx
+            imgs_pt_tensor = torch.cat(img_pt_list, dim=0)  
              # inference
-            imgs_tensor = torch.stack(img_tensors_list, dim=0).float().to(self.device)
-            ret = self.extractor(imgs_tensor) # [num_images, num_patches, desc_dim]  
+            with torch.no_grad():
+                img_features = self.clip_model.encode_image(imgs_pt_tensor)  
             
             for idx, frame_idx in tensor_idxs_to_frame_idxs.items():
-                imgs_features[frame_idx] = ret[idx].cpu().numpy()
+                imgs_features[frame_idx] = img_features[idx].cpu().numpy()
         return imgs_features
     
 def main():
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/scannet/scannet_dino_cfg.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/scannet/scannet_clip_features.yaml"
     cfg = CN()
     cfg.defrost()
     cfg.set_new_allowed(True)
     cfg.merge_from_file(cfg_file)
     
-    scannet_dino_generator = ScannetDinov2Generator(cfg, split='test')
+    scannet_dino_generator = ScannetClipGenerator(cfg, split='test')
     scannet_dino_generator.register_model()
     scannet_dino_generator.generateFeatures()
     

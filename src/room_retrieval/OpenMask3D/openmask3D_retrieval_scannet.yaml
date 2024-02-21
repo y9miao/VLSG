@@ -1,0 +1,31 @@
+seed: 42
+mode: 'val'
+data :
+  gt_patch: "gt_patch_anno/patch_anno_24_32"
+  gt_patch_th: 0.7
+  name            : Scannet
+  root_dir        : '' # to be read in code from env varia  
+  rescan: True
+  resplit: True
+  log_dir: ""
+  img:
+    img_step: 50
+  img_encoding:
+    feature_dir: "features_2D/OpenSeg_24_32"
+  obj_img:
+    topk: 5
+    name: "Features3D/obj_openmask3d_top5"
+  feat_dim: 768
+  cross_scene:
+    use_cross_scene: True
+    num_scenes: -1 # number of scenes 
+    num_negative_samples: -1 # number of negative samples 
+
+# for validation
+val:
+  batch_size: 16
+  num_workers: 2
+  pretrained: "./"
+  room_retrieval:
+    epsilon_th: 0.8
+    method_name: "OpenMask3D_XAll"

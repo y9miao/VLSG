@@ -39,7 +39,7 @@ from models.path_obj_pair_visualizer import PatchObjectPairVisualizer
 # dataset
 from datasets.loaders import get_val_dataloader, get_test_dataloader
 from datasets.scan3r_lidarclip import Scan3rLidarClipDataset
-
+from datasets.scannet_lidarclip import ScannetLidarClipDataset
 # use PathObjAligner for room retrieval
 class RoomRetrivalScore():
     def __init__(self, cfg, ds_split = 'val'):
@@ -55,8 +55,16 @@ class RoomRetrivalScore():
         
         # dataloader
         start_time = time.time()
-        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = Scan3rLidarClipDataset)
-        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = Scan3rLidarClipDataset)
+        if cfg.data.name == "Scan3R":
+            dataset = Scan3rLidarClipDataset
+        elif cfg.data.name == "Scannet":
+            dataset = ScannetLidarClipDataset
+        else:
+            raise ValueError("Unknown dataset type: {}".format(cfg.data.name))
+        
+        start_time = time.time()
+        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = dataset)
+        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = dataset)
         # register dataloader
         self.val_data_loader = val_data_loader
         self.val_dataset = val_dataset
@@ -175,8 +183,9 @@ class RoomRetrivalScore():
             pcs = [temporal_scan_pcs.contiguous()]
             scans_pcs_embeddings[temporal_scan_id],_ = self.model_forward(pcs)
             ## remove cur scan embeddings
-            scans_pcs_embeddings.pop(cur_scan_id)
-            room_score_scans.pop(cur_scan_id)
+            if cur_scan_id != temporal_scan_id:
+                scans_pcs_embeddings.pop(cur_scan_id)
+                room_score_scans.pop(cur_scan_id)
             ## calculate 
             scans_pcs_embeddings_cpu = torch_util.release_cuda_torch(scans_pcs_embeddings)
             start_time = time.time()
@@ -207,30 +216,32 @@ class RoomRetrivalScore():
         return result
 
     def room_retrieval_val_test(self):
+        # test
+        data_dicts = tqdm.tqdm(enumerate(self.test_data_loader), total=len(self.test_data_loader))
+        for iteration, data_dict in data_dicts:
+            with torch.no_grad():
+                data_dict = torch_util.to_cuda(data_dict)
+                result = self.room_retrieval_scan(data_dict, self.test_scan_pcs)
+                self.test_room_retrieval_summary.update_from_result_dict(result)
+                torch.cuda.empty_cache()
+        test_items = self.test_room_retrieval_summary.tostringlist()
+        # write to file
+        test_file = osp.join(self.output_dir, 'test_result.txt')
+        common.write_to_txt(test_file, test_items)
+        
         # val 
         data_dicts = tqdm.tqdm(enumerate(self.val_data_loader), total=len(self.val_data_loader))
         for iteration, data_dict in data_dicts:
-            data_dict = torch_util.to_cuda(data_dict)
-            result = self.room_retrieval_scan(data_dict, self.val_scan_pcs)
-            self.val_room_retrieval_summary.update_from_result_dict(result)
-            torch.cuda.empty_cache()
+            with torch.no_grad():
+                data_dict = torch_util.to_cuda(data_dict)
+                result = self.room_retrieval_scan(data_dict, self.val_scan_pcs)
+                self.val_room_retrieval_summary.update_from_result_dict(result)
+                torch.cuda.empty_cache()
             
         val_items = self.val_room_retrieval_summary.tostringlist()
         # write to file
         val_file = osp.join(self.output_dir, 'val_result.txt')
         common.write_to_txt(val_file, val_items)
-            
-        # test
-        data_dicts = tqdm.tqdm(enumerate(self.test_data_loader), total=len(self.test_data_loader))
-        for iteration, data_dict in data_dicts:
-            data_dict = torch_util.to_cuda(data_dict)
-            result = self.room_retrieval_scan(data_dict, self.test_scan_pcs)
-            self.test_room_retrieval_summary.update_from_result_dict(result)
-            torch.cuda.empty_cache()
-        test_items = self.test_room_retrieval_summary.tostringlist()
-        # write to file
-        test_file = osp.join(self.output_dir, 'test_result.txt')
-        common.write_to_txt(test_file, test_items)
         breakpoint = 1
 
 def parse_args(parser=None):

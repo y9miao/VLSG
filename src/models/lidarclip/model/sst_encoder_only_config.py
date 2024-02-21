@@ -1,6 +1,6 @@
-voxel_size = (0.1, 0.1, 5.0)
+voxel_size = (0.2, 0.2, 4.0)
 window_shape = (5, 5, 1)  # 5 * 0.1m
-point_cloud_range = [-4.0, -4.0, -2.50, 4.0, 4.0, 2.50]
+point_cloud_range = [-4.0, -4.0, -1.50, 4.0, 4.0, 2.50]
 drop_info_training = {
     0: {"max_tokens": 30, "drop_range": (0, 30)},
     1: {"max_tokens": 60, "drop_range": (30, 60)},

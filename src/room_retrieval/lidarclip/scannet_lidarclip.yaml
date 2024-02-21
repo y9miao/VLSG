@@ -5,19 +5,21 @@ data :
   name            : Scannet
   root_dir        : '' # to be read in code from env varia  
   rescan: True
-  temporal: True
+  temporal: False
   resplit: True
+  gt_patch: "gt_patch_anno/patch_anno_24_32"
+  gt_patch_th: 0.7
   img:
-    img_step: 1
+    img_step: 50
   img_encoding:
-    feature_dir: "Features2D/clip_ViT_L_14" # relative to data_root_dir/files
+    feature_dir: "features_2D/clip_ViT_L_14" # relative to data_root_dir/files
   depth:
     scale: 1000.0
     min_depth: 0.1
     max_depth: 8.0
   cross_scene:
     use_cross_scene: True
-    num_scenes: 9 # number of scenes 
+    num_scenes: -1 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
 
 # for sgaligner
@@ -93,7 +95,7 @@ train:
     free_backbone_epoch: 10500 # freeze backbone until certain epochs
     grad_acc_steps: 1
   loss:
-    use_temporal: True
+    use_temporal: False
     loss_type: "cos"
     alpha: 0.5
     temperature: 0.1
@@ -103,17 +105,17 @@ train:
   vis_epoch_steps: 100
 # for validation
 val:
-  batch_size: 16
-  num_workers: 8
+  batch_size: 1
+  num_workers: 1
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "LidarClipE8_S1"
+    method_name: "scannet_E12_XAll"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./epoch-8.pth.tar" 
+  resume: "./snapshots/epoch-12.pth.tar" 
 # others
 seed: 42
 

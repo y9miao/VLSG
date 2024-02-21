@@ -30,6 +30,7 @@ import subprocess
 cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/scannet/scannet_sg_prediction.yaml"
 scene_graph_fusion_exe = "/home/yang/toolbox/third_party/SceneGraphFusion/bin/exe_GraphSLAM"
 scene_graph_fusion_model = "/home/yang/toolbox/third_party/SceneGraphFusion/traced/"
+parallel_jobs = 4
 
 class ScannetSGPrediction():
     def __init__(self, cfg, split):
@@ -45,11 +46,11 @@ class ScannetSGPrediction():
             self.scan_ids += self.rooms_info[room_id]
             for scan_id in self.rooms_info[room_id]:
                 self.scan2room[scan_id] = room_id
-        self.scan_ids = ["scene0231_02"]
         # out dir
         self.out_dir = osp.join(cfg.data.root_dir, split)
         
     def generateSceneGraphPrediction(self):
+        commands = []
         for scan_id in tqdm(self.scan_ids):
             scan_folder = osp.join(self.out_dir, scan_id)
             seq_file = osp.join(scan_folder, "{}.sens".format(scan_id))
@@ -57,9 +58,30 @@ class ScannetSGPrediction():
             
             exe_command = "{} --pth_in {} --pth_out {} --pth_model {}".format(
                 scene_graph_fusion_exe, seq_file, out_folder, scene_graph_fusion_model)
+            commands.append(exe_command)
+        # run the commands
+        scannet_utils.RunBashBatch(commands, jobs_per_step=parallel_jobs)
             
-            subprocess.run(exe_command, shell=True)
-        
+        all_processed = False
+        while not all_processed:
+            
+            commands = []
+            # check if the output file exists
+            ## if not exists, add to the commands
+            for scan_id in self.scan_ids:
+                out_folder = osp.join(self.out_dir, scan_id, "scene_graph_fusion")
+                files_to_check = ['predictions.json', 'inseg.ply', "node_semantic.ply"]
+                
+                if not all([osp.exists(osp.join(out_folder, file)) for file in files_to_check]):
+                    scan_folder = osp.join(self.out_dir, scan_id)
+                    seq_file = osp.join(scan_folder, "{}.sens".format(scan_id))
+                    exe_command = "{} --pth_in {} --pth_out {} --pth_model {}".format(
+                        scene_graph_fusion_exe, seq_file, out_folder, scene_graph_fusion_model)
+                    commands.append(exe_command)
+            all_processed = len(commands) == 0
+            # run the commands
+            scannet_utils.RunBashBatch(commands, jobs_per_step=parallel_jobs)
+            
     
 def main():
     cfg = CN()
@@ -67,7 +89,7 @@ def main():
     cfg.set_new_allowed(True)
     cfg.merge_from_file(cfg_file)
     
-    scannet_dino_generator = ScannetSGPrediction(cfg, split='val')
+    scannet_dino_generator = ScannetSGPrediction(cfg, split='test')
     scannet_dino_generator.generateSceneGraphPrediction()
     
 if __name__ == '__main__':

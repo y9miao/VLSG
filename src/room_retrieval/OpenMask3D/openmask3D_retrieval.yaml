@@ -22,7 +22,7 @@ data :
   feat_dim: 768
   cross_scene:
     use_cross_scene: True
-    num_scenes: 9 # number of scenes 
+    num_scenes: 49 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
 
 
@@ -64,9 +64,9 @@ sgaligner:
 
 # for validation
 val:
-  batch_size: 16
+  batch_size: 8
   num_workers: 2
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "OpenMask3D"
+    method_name: "OpenMask3D_scan3r_X50"

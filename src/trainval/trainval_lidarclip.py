@@ -25,6 +25,7 @@ from models.lidarclip.model.sst import LidarEncoderSST
 # dataset
 from datasets.loaders import get_train_val_data_loader, get_train_dataloader, get_val_dataloader
 from datasets.scan3r_lidarclip import Scan3rLidarClipDataset
+from datasets.scannet_lidarclip import ScannetLidarClipDataset
 # utils
 from utils import common, scan3r, torch_util
 
@@ -121,7 +122,12 @@ class Trainer(EpochBasedTrainer):
                                     weight_decay=cfg.train.optim.weight_decay)
 
     def getDataLoader(self, cfg):
-        dataset = Scan3rLidarClipDataset
+        if cfg.data.name == 'Scan3R':
+            dataset = Scan3rLidarClipDataset
+        elif cfg.data.name == 'Scannet':
+            dataset = ScannetLidarClipDataset
+        else:
+            raise NotImplementedError('Dataset {} not implemented.'.format(cfg.data.name))
         # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, dataset)
         train_dataset, train_dataloader = get_train_dataloader(cfg, dataset)
         val_dataset, val_dataloader = get_val_dataloader(cfg, dataset)
@@ -272,8 +278,9 @@ class Trainer(EpochBasedTrainer):
             depthmaps_pcs = [depthmap_pc.contiguous() for frame_idx, depthmap_pc in temporal_scan_depthmap_pcs.items()]
             scans_depthmaps_embeddings[temporal_scan_id],_ = self.model_forward(depthmaps_pcs)
             ## remove cur scan embeddings
-            scans_depthmaps_embeddings.pop(cur_scan_id)
-            room_score_depthmap.pop(cur_scan_id)
+            if cur_scan_id != temporal_scan_id:
+                scans_depthmaps_embeddings.pop(cur_scan_id)
+                room_score_depthmap.pop(cur_scan_id)
             ## calculate similarity
             start_time = time.time()
             room_score_depthmap[temporal_scan_id] = self.sim_calculation(img_feature, scans_depthmaps_embeddings[temporal_scan_id]).max().item()
@@ -350,8 +357,9 @@ class Trainer(EpochBasedTrainer):
             pcs = [temporal_scan_pcs.contiguous()]
             scans_pcs_embeddings[temporal_scan_id],_ = self.model_forward(pcs)
             ## remove cur scan embeddings
-            scans_pcs_embeddings.pop(cur_scan_id)
-            room_score_scans.pop(cur_scan_id)
+            if cur_scan_id != temporal_scan_id:
+                scans_pcs_embeddings.pop(cur_scan_id)
+                room_score_scans.pop(cur_scan_id)
             ## calculate similarity
             start_time = time.time()
             sim_mse, sim_cos = self.sim_calculation_eval(img_feature, scans_pcs_embeddings[temporal_scan_id])

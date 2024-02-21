@@ -118,6 +118,7 @@ _C.val.batch_size = 1
 _C.val.num_workers = 1
 _C.val.pretrained = ''
 _C.val.room_retrieval = CN()
+_C.val.room_retrieval.retrieval = False
 _C.val.room_retrieval.epsilon_th = 0.8
 _C.val.room_retrieval.method_name = ''
 

@@ -44,6 +44,7 @@ LipLocModel = importlib.import_module(f"src.models.LipLoc.models.{LipLoc_CFG.mod
 # dataset
 from datasets.loaders import get_val_dataloader, get_test_dataloader
 from datasets.scan3r_liploc import Scan3rLipLocDataset
+from datasets.scannet_liploc import ScannetLipLocDataset
 # use PathObjAligner for room retrieval
 class RoomRetrivalScore():
     def __init__(self, cfg, ds_split = 'val'):
@@ -59,8 +60,14 @@ class RoomRetrivalScore():
         
         # dataloader
         start_time = time.time()
-        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = Scan3rLipLocDataset)
-        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = Scan3rLipLocDataset)
+        if cfg.data.name == "Scan3R":
+            dataset = Scan3rLipLocDataset
+        elif cfg.data.name == "Scannet":
+            dataset = ScannetLipLocDataset
+        else:
+            raise ValueError("Unknown dataset type: {}".format(cfg.data.name))
+        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = dataset)
+        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = dataset)
         # register dataloader
         self.val_data_loader = val_data_loader
         self.val_dataset = val_dataset

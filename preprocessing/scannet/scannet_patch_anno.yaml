@@ -3,7 +3,11 @@ seed: 42
 data:
   root_dir: "/home/yang/990Pro/scannet_seqs/data"
   img_step: 25
+  img_w: 1296
+  img_h: 968
   resize_w: 448
   resize_h: 336
-  feature_2D_name: "features_2D/dinov2_24_32"
+  patch_w: 32
+  patch_h: 24
+  gt_patch: "gt_patch_anno/patch_anno_24_32"
   inference_step: 25
