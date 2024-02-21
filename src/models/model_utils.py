@@ -37,7 +37,7 @@ class TransformerEncoderLayer(nn.Module):
                  d_model_in: int, 
                  d_model_inner: int = 256, 
                  d_model_out: int = 256,
-                 nhead: int = 2,
+                 nhead: int = 4,
                  acti_layer = nn.GELU()
                  ) -> None:
         super().__init__()
@@ -63,21 +63,21 @@ class TransformerEncoder(nn.Module):
                  d_model_in: int = 256,
                  d_model_inner: int = 256,
                  d_model_out: int = 256,
-                 num_heads: int = 2,
+                 num_heads: int = 4,
                  acti_layer = nn.GELU()
                  ) -> None:
         super().__init__()
-        # self.layers = nn.ModuleList([TransformerEncoderLayer(
-        #     d_model_in, d_model_inner, d_model_in, num_heads, acti_layer) for _ in range(num_layers)])
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model_in, nhead=num_heads)
-        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
+        self.layers = nn.ModuleList([TransformerEncoderLayer(
+            d_model_in, d_model_inner, d_model_in, num_heads, acti_layer) for _ in range(num_layers)])
+        # self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model_in, nhead=num_heads)
+        # self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model_in))
         self.map_out = nn.Linear(d_model_in, d_model_out)
 
     def forward(self, x):
-        # for layer in self.layers:
-        #     x = layer(x)
-        x = self.transformer_encoder(x)
+        for l_i, layer in enumerate(self.layers):
+            x = layer(x)
+        # x = self.transformer_encoder(x)
         x = self.map_out(x)
         return x
     

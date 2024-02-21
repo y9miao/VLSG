@@ -9,12 +9,12 @@ def get_loss(cfg):
     loss_type = cfg.train.loss.loss_type
     if loss_type == 'ICLLossBothSidesSumOutLog':
         return ICLLossBothSidesSumOutLog(
-            cfg.train.loss.use_temporal,
-            cfg.train.loss.temperature, 
-            cfg.train.loss.alpha,
-            cfg.train.loss.use_global_descriptor,
-            cfg.train.loss.global_loss_coef,
-            cfg.train.loss.global_desc_temp
+            use_temporal = cfg.train.loss.use_temporal,
+            temperature = cfg.train.loss.temperature, 
+            alpha = cfg.train.loss.alpha,
+            use_global_descriptor = cfg.train.loss.use_global_descriptor,
+            global_loss_coef = cfg.train.loss.global_loss_coef,
+            global_desc_temp = cfg.train.loss.global_desc_temp
             )
     else:
         raise ValueError('Unknown loss type: {}'.format(loss_type))
