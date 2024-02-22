@@ -57,6 +57,7 @@ _C.model.backbone.backbone_dim = 512
 _C.model.patch = CN()
 _C.model.patch.hidden_dims = []
 _C.model.patch.encoder_dim = 256
+_C.model.patch.gcn_layers = 0
 _C.model.obj = CN()
 _C.model.obj.embedding_dim = 256
 _C.model.obj.embedding_hidden_dims = []

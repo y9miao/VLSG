@@ -113,6 +113,7 @@ class Trainer(EpochBasedTrainer):
         ## encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
         patch_encoder_dim = cfg.model.patch.encoder_dim
+        patch_gcn_layers = cfg.model.patch.gcn_layers
         obj_embedding_dim = cfg.model.obj.embedding_dim
         obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
         obj_encoder_dim = cfg.model.obj.encoder_dim
@@ -128,6 +129,7 @@ class Trainer(EpochBasedTrainer):
                                 img_rotate, 
                                 patch_hidden_dims,
                                 patch_encoder_dim,
+                                patch_gcn_layers,
                                 obj_embedding_dim,
                                 obj_embedding_hidden_dims,
                                 obj_encoder_dim,

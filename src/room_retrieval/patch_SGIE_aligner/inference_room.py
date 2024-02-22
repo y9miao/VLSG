@@ -1,5 +1,6 @@
 import argparse
 from enum import unique
+from math import e
 import os 
 import os.path as osp
 from re import T
@@ -135,8 +136,12 @@ class RoomRetrivalScore():
         obj_embedding_dim = cfg.model.obj.embedding_dim
         obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
         obj_encoder_dim = cfg.model.obj.encoder_dim
-        
         drop = cfg.model.other.drop
+        ## temporal 
+        self.use_temporal = cfg.train.loss.use_temporal
+        ## global descriptor
+        self.use_global_descriptor = cfg.train.loss.use_global_descriptor
+        self.global_descriptor_dim = cfg.model.global_descriptor_dim
         
         self.model = PatchSGIEAligner(backbone,
                                 num_reduce,
@@ -152,7 +157,9 @@ class RoomRetrivalScore():
                                 attr_dim,
                                 img_patch_feat_dim,
                                 drop,
-                                cfg.train.loss.use_temporal)
+                                self.use_temporal,
+                                self.use_global_descriptor,
+                                self.global_descriptor_dim)
         
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained:
@@ -203,6 +210,47 @@ class RoomRetrivalScore():
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
         return patch_features_batch, obj_3D_embeddings_norm, forward_time
     
+    def model_forward_with_GlobalDescriptor(self, data_dict):
+        # assert self.cfg.data.img_encoding.use_feature != True, \
+        #     'To measure runtime, please dont use pre-calculated features.'
+        
+        # image features, image by image for fair time comparison
+        batch_size = data_dict['batch_size']
+        forward_time = 0.
+        patch_features_batch = None
+        for i in range(batch_size):
+            with torch.no_grad():
+                start_time = time.time()
+                if self.cfg.data.img_encoding.use_feature:
+                    features = data_dict['patch_features'][i:i+1]
+                else:
+                    images = data_dict['images'] # (B, H, W, C)
+                    image = images[i:i+1]
+                    image = _to_channel_first(image)
+                    features = self.model.backbone(image)[-1]
+                    features = _to_channel_last(features)
+                patch_features = self.model.reduce_layers(features)
+                patch_features = self.model.patch_encoder(patch_features)
+                forward_time += time.time() - start_time
+                patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
+            patch_features_batch = patch_features if patch_features_batch is None \
+                else torch.cat([patch_features_batch, patch_features], dim=0)
+        
+        # object features
+        obj_3D_embeddings = self.model.forward_scene_graph(data_dict)  # (O, C*)
+        obj_3D_embeddings = self.model.obj_embedding_encoder(obj_3D_embeddings) # (O, C*)
+        obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
+        
+        # global descriptor
+        patch_global_descriptor, obj_global_descriptors = None, None
+        if self.use_global_descriptor:
+            patch_features_batch_norm = F.normalize(patch_features_batch, dim=1)
+            patch_global_descriptor, obj_global_descriptors = \
+                self.model.forward_global_descriptor(patch_features_batch_norm, obj_3D_embeddings_norm, data_dict)
+
+        return patch_features_batch, obj_3D_embeddings_norm, forward_time, patch_global_descriptor, obj_global_descriptors
+
+    
     def room_retrieval_dict(self, data_dict, dataset, room_retrieval_record, record_retrieval = False):
         
         # room retrieval with scan point cloud
@@ -210,6 +258,9 @@ class RoomRetrivalScore():
         top_k_list = [1,3,5]
         top_k_recall_temporal = {"R@{}_T_S".format(k): 0. for k in top_k_list}
         top_k_recall_non_temporal = {"R@{}_NT_S".format(k): 0. for k in top_k_list}
+        top_k_recall_global = {"R@{}_T_G".format(k): 0. for k in top_k_list}
+        top_k_recall_global_non_temporal = {"R@{}_NT_G".format(k): 0. for k in top_k_list}
+        
         retrieval_time_temporal = 0.
         retrieval_time_non_temporal = 0.
         img_forward_time = 0.
@@ -219,8 +270,13 @@ class RoomRetrivalScore():
         obj_ids_cpu = torch_util.release_cuda_torch(obj_ids)
         
         # get embeddings
-        patch_features_batch, obj_3D_embeddings_norm, forward_time = \
-                self.model_forward(data_dict)
+        if self.use_global_descriptor:
+            patch_features_batch, obj_3D_embeddings_norm, forward_time, patch_global_descriptor, obj_global_descriptors = \
+                self.model_forward_with_GlobalDescriptor(data_dict)
+            patch_global_descriptor_norm = F.normalize(patch_global_descriptor, dim=1)
+        else:
+            patch_features_batch, obj_3D_embeddings_norm, forward_time = \
+                    self.model_forward(data_dict)
         for batch_i in range(batch_size):
             patch_features = patch_features_batch[batch_i]
             # non-temporal
@@ -296,6 +352,19 @@ class RoomRetrivalScore():
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
             matched_obj_obj_ids = obj_ids_cpu_scan[matched_obj_idxs]
             
+            if self.use_global_descriptor:
+                patch_global_descriptor_pb = patch_global_descriptor_norm[batch_i:batch_i+1]
+                room_score_global_NT = {}
+                for candidate_scan_id in candata_scan_obj_idxs.keys():
+                    candidate_global_descriptor = obj_global_descriptors[candidate_scan_id]
+                    candidate_global_descriptor_norm = F.normalize(candidate_global_descriptor, dim=1)
+                    room_score_global_NT[candidate_scan_id] = patch_global_descriptor_pb@candidate_global_descriptor_norm.T
+                room_sorted_global_scores_NT =  [item[0] for item in 
+                                                    sorted(room_score_global_NT.items(), key=lambda x: x[1], reverse=True)]
+                for k in top_k_list:
+                    if target_scan_id in room_sorted_global_scores_NT[:k]:
+                        top_k_recall_global_non_temporal["R@{}_NT_G".format(k)] += 1
+                
             # temporal
             room_score_scans_T = {}
             assoc_data_dict_temp = data_dict['assoc_data_dict_temp'][batch_i]
@@ -364,6 +433,19 @@ class RoomRetrivalScore():
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
             matched_obj_idx_temp = obj_ids_cpu_scan[matched_obj_idxs_temp]
             
+            if self.use_global_descriptor:
+                patch_global_descriptor_pb = patch_global_descriptor_norm[batch_i:batch_i+1]
+                room_score_global_T = {}
+                for candidate_scan_id in candata_scan_obj_idxs.keys():
+                    candidate_global_descriptor = obj_global_descriptors[candidate_scan_id]
+                    candidate_global_descriptor_norm = F.normalize(candidate_global_descriptor, dim=1)
+                    room_score_global_T[candidate_scan_id] = patch_global_descriptor_pb@candidate_global_descriptor_norm.T
+                room_sorted_global_scores_T =  [item[0] for item in 
+                                                    sorted(room_score_global_T.items(), key=lambda x: x[1], reverse=True)]
+                for k in top_k_list:
+                    if target_scan_id in room_sorted_global_scores_T[:k]:
+                        top_k_recall_global["R@{}_T_G".format(k)] += 1
+            
             # retrieva_record
             scan_id = data_dict['scan_ids'][batch_i]
             if scan_id not in room_retrieval_record:
@@ -386,6 +468,9 @@ class RoomRetrivalScore():
         for k in top_k_list:
             top_k_recall_temporal["R@{}_T_S".format(k)] /= 1.0*batch_size
             top_k_recall_non_temporal["R@{}_NT_S".format(k)] /= 1.0*batch_size
+            top_k_recall_global["R@{}_T_G".format(k)] /= 1.0*batch_size
+            top_k_recall_global_non_temporal["R@{}_NT_G".format(k)] /= 1.0*batch_size
+            
         retrieval_time_temporal = retrieval_time_temporal / (1.0*batch_size)
         retrieval_time_non_temporal = retrieval_time_non_temporal / (1.0*batch_size)
         img_forward_time = forward_time / (1.0*batch_size)
@@ -397,6 +482,10 @@ class RoomRetrivalScore():
         }
         result.update(top_k_recall_temporal)
         result.update(top_k_recall_non_temporal)
+        if self.use_global_descriptor:
+            result.update(top_k_recall_global)
+            result.update(top_k_recall_global_non_temporal)
+        
         return result
 
     def room_retrieval_val(self):

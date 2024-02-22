@@ -74,6 +74,7 @@ class PatchSGIEAligner(nn.Module):
                  img_transpose, 
                  patch_hidden_dims,
                  patch_encoder_dim,
+                 num_patch_gcn_layers,
                  obj_embedding_dim,
                  obj_embedding_hidden_dims,
                  obj_encoder_dim,
@@ -102,6 +103,19 @@ class PatchSGIEAligner(nn.Module):
         self.img_transpose = img_transpose
         self.patch_encoder = Mlps(backbone_dim, hidden_features = patch_hidden_dims, 
                                  out_features= patch_encoder_dim, drop = drop)
+
+        # patch gcn
+        self.num_patch_gcn_layers = num_patch_gcn_layers
+        if self.num_patch_gcn_layers > 0:
+            modules = []
+            for i in range(self.num_patch_gcn_layers):
+                modules.append(nn.Conv2d(patch_encoder_dim, patch_encoder_dim, 3, 1, 1))
+                modules.append(nn.GELU())
+                modules.append(nn.Dropout(drop))
+            modules =nn.ModuleList(modules)
+            self.patch_gcn = nn.Sequential(*modules)
+        else:
+            self.patch_gcn = nn.Identity()
         
         # 3D scene graph encoder
         self.sg_encoder = MultiModalEncoder(
@@ -148,6 +162,12 @@ class PatchSGIEAligner(nn.Module):
         channel_last = True
         patch_features = self.reduce_layers(features) # (B, H/64, W/64, C'); input channel last,output channel last 
         patch_features = self.patch_encoder(patch_features) # (B, P_H, P_W, C*); input channel last,output channel last 
+        # to channel first
+        patch_features = _to_channel_first(patch_features)
+        patch_features = self.patch_gcn(patch_features)
+        # to channel last
+        patch_features = _to_channel_last(patch_features)
+        
         patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
         
         # sg encoding
@@ -197,6 +217,7 @@ class PatchSGIEAligner(nn.Module):
         embs['patch_obj_sim_temp'] = patch_obj_sim_temp_list # B - [P_H*P_W, N]
         embs['patch_patch_sim_temp'] = patch_patch_sim_temp_list # B - [P_H*P_W, P_H*P_W]
         embs['obj_obj_sim_temp'] = obj_obj_sim_temp_list
+        
         return embs
     
     def forward_with_patch_features(self, data_dict):
@@ -206,6 +227,12 @@ class PatchSGIEAligner(nn.Module):
         # encoding patch features
         patch_features = self.reduce_layers(patch_features) 
         patch_features = self.patch_encoder(patch_features) # (B, P_H, P_W, C*)
+        # to channel first
+        patch_features = _to_channel_first(patch_features)
+        patch_features = self.patch_gcn(patch_features)
+        # to channel last
+        patch_features = _to_channel_last(patch_features)
+        
         patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
         patch_features_norm = F.normalize(patch_features, dim=-1)
         
