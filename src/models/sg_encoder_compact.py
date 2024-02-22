@@ -164,7 +164,7 @@ class SceneGraphEncoder(nn.Module):
             img_feat_encode_dim = self.encode_dims['img_patch']
             self.img_patch_encoder = Mlps(in_features=img_feat_input_dim, 
                         hidden_features=encode_depth['img_patch'], out_features=img_feat_encode_dim)
-            self.multiview_encoder = PatchAggregator(d_model=img_feat_encode_dim, nhead=2, num_layers=1, dropout=self.dropout)
+            self.multiview_encoder = PatchAggregator(d_model=img_feat_encode_dim, nhead=4, num_layers=1, dropout=self.dropout)
             self.multiview_norm = nn.LayerNorm(img_feat_encode_dim)
         
         if 'gat' in self.modules:
