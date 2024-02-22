@@ -220,7 +220,7 @@ class SceneGraphEncoder(nn.Module):
                             img_patches_attn = self.multiview_encoder(img_patch_encode.unsqueeze(0))
                             img_patches_attn = self.multiview_norm(img_patches_attn)
                             img_patches_attn = img_patches_attn.squeeze(0)
-                            img_multiview_encode = torch.max(img_patch_encode + img_patches_attn, dim=0, keepdim=True)
+                            img_multiview_encode, _ = torch.max(img_patch_encode + img_patches_attn, dim=0, keepdim=True)
                             img_multiview_encode = img_multiview_encode
                             obs_img_patch_emb = torch.cat([img_multiview_encode]) if obs_img_patch_emb is None else \
                                         torch.cat([obs_img_patch_emb, img_multiview_encode])
