@@ -5,7 +5,7 @@ export Scan3R_ROOT_DIR=/home/yang/big_ssd/Scan3R/3RScan
 # export training out dir
 export ROOM_RETRIEVAL_OUT_DIR=/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PaperMetric/liploc
 # export resume folder 
-export RESUME_DIR=/home/yang/big_ssd/Scan3R/VLSG/checkpoint/LipLoc
+export RESUME_DIR=
 # export conda env
 export CONDA_BIN=/home/yang/anaconda3/bin
 

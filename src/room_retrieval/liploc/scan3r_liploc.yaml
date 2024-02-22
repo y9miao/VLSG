@@ -23,7 +23,7 @@ data :
     range_name: "Features3D/LidarLoc/Meshrange_360_90"
   cross_scene:
     use_cross_scene: True
-    num_scenes: 9 # number of scenes 
+    num_scenes: 49 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
 
 # for sgaligner
@@ -107,17 +107,17 @@ train:
   vis_epoch_steps: 100
 # for validation
 val:
-  batch_size: 16
+  batch_size: 2
   num_workers: 2
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "LipLocE9_S1_scan3r_X10"
+    method_name: "LipLocE8_S1_scan3r_X50"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./epoch-9.pth.tar" 
+  resume: "/home/yang/big_ssd/Scan3R/3RScan/out_patch_obj_match/week9/LipLoc_NT_360_Mesh_lr/snapshots/epoch-8.pth.tar" 
 # others
 seed: 42
 

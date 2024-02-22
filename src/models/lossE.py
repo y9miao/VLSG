@@ -141,6 +141,7 @@ class ICLLossBothSidesSumOutLog(nn.Module):
                 
             cos_sim_target_scan = cos_sim_scans[target_scan_id]
             loss = -torch.log(cos_sim_target_scan / sum_cos_sim + self.epsilon)
+            loss = torch.Tensor([loss]).to(loss.device)
             
             # get scan_id with max cos sim
             scan_id_max_cos_sim = max(cos_sim_scans, key=cos_sim_scans.get)
@@ -206,9 +207,15 @@ class ICLLossBothSidesSumOutLog(nn.Module):
                 loss_batch_global_NT, sucess_global_batch_NT = self.forward_global_match_item(embs, data_dict)
                 if self.use_temporal:
                     loss_batch_global_T, sucess_global_batch_T = self.forward_global_match_item(embs, data_dict, key='_temp')
+                    loss_dict['loss_global_NT'] = loss_batch_global_NT.mean()
+                    loss_dict['success_ratio_global_NT'] = sucess_global_batch_NT.mean()
+                    loss_dict['loss_global_T'] = loss_batch_global_T.mean()
+                    loss_dict['success_ratio_global_T'] = sucess_global_batch_T.mean()
                     loss_dict['loss_global'] = (loss_batch_global_NT.mean() + loss_batch_global_T.mean()) / 2
                     loss_dict['success_ratio_global'] = (sucess_global_batch_NT.mean() + sucess_global_batch_T.mean()) / 2
                 else:
+                    loss_dict['loss_global_NT'] = loss_batch_global_NT.mean()
+                    loss_dict['success_ratio_global_NT'] = sucess_global_batch_NT.mean()
                     loss_dict['loss_global'] = loss_batch_global_NT.mean()
                     loss_dict['success_ratio_global'] = sucess_global_batch_NT.mean()
                 loss_dict['loss'] += self.global_loss_coef * loss_dict['loss_global']
