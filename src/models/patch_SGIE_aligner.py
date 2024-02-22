@@ -84,7 +84,8 @@ class PatchSGIEAligner(nn.Module):
                  drop,
                  use_temporal,
                  use_global_descriptor = False, 
-                 global_descriptor_dim = None
+                 global_descriptor_dim = None,
+                 
                  ):
         super().__init__()
         
