@@ -35,7 +35,7 @@ class PatchAggregator(nn.Module):
         # Initialize the [CLS] token
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
         
-        self.transformer_encoder = TransformerEncoderLayer(d_model=d_model, d_model_inner=int(d_model/2), nhead=nhead)
+        self.transformer_encoder = TransformerEncoderLayer(d_model=d_model, nhead=nhead)
 
     def forward(self, x):
         # # x: (batch_size, num_patches, d_model)
