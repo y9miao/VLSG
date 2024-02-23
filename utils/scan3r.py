@@ -3,7 +3,7 @@ import numpy as np
 import json
 from glob import glob
 from plyfile import PlyData, PlyElement
-import cv2
+
 import pickle
 
 def get_scan_ids(dirname, split):
@@ -123,6 +123,7 @@ def load_pkl_data(filename):
 
 
 def load_gt_2D_anno(data_root_dir, scan_id, skip=None):
+    import cv2
     anno_imgs = {}
     frame_idxs = load_frame_idxs(osp.join(data_root_dir, "scenes"), scan_id, skip)
     anno_folder = osp.join(data_root_dir, "files", 'gt_projection/obj_id', scan_id)
@@ -231,6 +232,7 @@ def create_ply_data(ply_data, visible_pts_idx):
     return vertices, object_id
 
 def load_depth_map(depth_file, scale):
+    import cv2
     depth_map = cv2.imread(depth_file, cv2.IMREAD_UNCHANGED)
     depth_map = depth_map.astype(np.float32) / scale
     return depth_map

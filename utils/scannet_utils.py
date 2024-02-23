@@ -5,7 +5,6 @@ from glob import glob
 from plyfile import PlyData, PlyElement
 from scipy.spatial import ConvexHull
 from copy import deepcopy
-import cv2
 import pickle
 from utils import common, scan3r, point_cloud, define
 import scipy, torch

@@ -87,5 +87,47 @@ class TransformerEncoder(nn.Module):
         cls_embed = x_cls[:, 0, :]
         return cls_embed
     
+class Residual(nn.Module):
+    """The Residual block of ResNet."""
+    def __init__(self, input_channels, num_channels, use_1x1conv=False,
+                 strides=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(input_channels, num_channels, kernel_size=3,
+                               padding=1, stride=strides)
+        self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3,
+                               padding=1)
+        if use_1x1conv:
+            self.conv3 = nn.Conv2d(input_channels, num_channels,
+                                   kernel_size=1, stride=strides)
+        else:
+            self.conv3 = None
+        self.bn1 = nn.BatchNorm2d(num_channels)
+        self.bn2 = nn.BatchNorm2d(num_channels)
 
+    def forward(self, X):
+        Y = F.relu(self.bn1(self.conv1(X)))
+        Y = self.bn2(self.conv2(Y))
+        if self.conv3:
+            X = self.conv3(X)
+        Y += X
+        return F.relu(Y)
     
+class PatchCNN(nn.Module):
+    """ CNN for context information between patches
+    d_model: dim of patch embeds
+    num_layers: must be even
+    """
+    def __init__(self, 
+                 d_model: int = 256, 
+                 num_layers: int = 6
+                 ) -> None:
+        super().__init__()
+
+        self.num_block = num_layers // 2
+        modules = []
+        for i in range(self.num_block):
+            modules.append(Residual(d_model, d_model))
+        self.blocks = nn.Sequential(*modules)
+        
+    def forward(self, x):
+        return self.blocks(x)

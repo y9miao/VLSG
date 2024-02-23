@@ -1,5 +1,4 @@
 import numpy as np
-import cv2
 import torch
 from scipy.spatial.transform import Rotation
 from typing import Optional
@@ -113,6 +112,7 @@ def get_visible_pts_from_cam_pose(scene_pts, cam_2_world_pose, intrinsic_info):
     '''
     Given a scene PCl, return the points visible in the given frame
     '''
+    import cv2
     rvec = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     tvec = np.array([0.0, 0.0, 0.0])
     dist_coeffs = np.array([.0, .0, .0, .0, .0])

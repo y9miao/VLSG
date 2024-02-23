@@ -12,7 +12,7 @@ from GCVit.models import gc_vit
 # 3D scene graph feature extractor
 from src.models.sg_encoder import MultiModalEncoder
 # model utils
-from model_utils import TransformerEncoder
+from model_utils import TransformerEncoder, PatchCNN
 
 
 def _to_channel_last(x):
@@ -107,13 +107,8 @@ class PatchSGIEAligner(nn.Module):
         # patch gcn
         self.num_patch_gcn_layers = num_patch_gcn_layers
         if self.num_patch_gcn_layers > 0:
-            modules = []
-            for i in range(self.num_patch_gcn_layers):
-                modules.append(nn.Conv2d(patch_encoder_dim, patch_encoder_dim, 3, 1, 1))
-                modules.append(nn.GELU())
-                modules.append(nn.Dropout(drop))
-            modules =nn.ModuleList(modules)
-            self.patch_gcn = nn.Sequential(*modules)
+            self.patch_gcn = PatchCNN(d_model = patch_encoder_dim, 
+                                      num_layers = num_patch_gcn_layers)
         else:
             self.patch_gcn = nn.Identity()
         

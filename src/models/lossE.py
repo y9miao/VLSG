@@ -3,7 +3,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from VLSG.src.models import loss
 
 def get_loss(cfg):
     loss_type = cfg.train.loss.loss_type
