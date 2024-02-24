@@ -103,24 +103,13 @@ class ObjVisualEmbGen(data.Dataset):
         self.image_path = {}
         for scan_id in self.scan_ids:
             self.image_path[scan_id] = scan3r.load_frame_paths(self.data_root_dir, scan_id)
-                
-        # load 2D gt obj id annotation
-        self.gt_2D_anno_folder = osp.join(self.scans_files_dir, 'gt_projection/obj_id_pkl')
-        self.obj_2D_annos_pathes = {}
-        for scan_id in self.scan_ids:
-            anno_2D_file = osp.join(self.gt_2D_anno_folder, "{}.pkl".format(scan_id))
-            self.obj_2D_annos_pathes[scan_id] = anno_2D_file
-            
-        # obj visual emb config
-        self.topk = top_k
             
         # out obj visual emb dir
         self.obj_visual_emb_dir = osp.join(self.scans_files_dir, self.cfg.data.obj_img.name)
         common.ensure_dir(self.obj_visual_emb_dir)
         
         # get device 
-        if not torch.cuda.is_available(): raise RuntimeError('No CUDA devices available.')
-        self.device = torch.device("cuda")
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         
         # load clip model
         self.clip_model, self.clip_preprocess = clip.load(clip_model_name, jit=False)
