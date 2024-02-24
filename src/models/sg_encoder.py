@@ -21,25 +21,9 @@ from torch import nn, Tensor
 from models.sgaligner.src.aligner.networks.gat import MultiGAT
 from models.sgaligner.src.aligner.networks.pointnet import PointNetfeat
 from models.sgaligner.src.aligner.networks.pct import NaivePCT
+# model utils
+from model_utils import Attention, TransformerEncoderLayer, Mlps, PatchAggregator
 
-
-class PatchAggregator(nn.Module):
-
-    def __init__(self, d_model, nhead, num_layers, dropout):
-        super().__init__()
-        # transformer encoders
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
-        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
-        # Initialize the [CLS] token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
-
-    def forward(self, x):
-        # x: (batch_size, num_patches, d_model)
-        cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-        output = self.transformer_encoder(x)
-        cls_token_output = output[:, 0, :]
-        return cls_token_output
     
 class MultiModalFusion(nn.Module):
     def __init__(self, modal_num, with_weight=1):
@@ -59,7 +43,7 @@ class MultiModalEncoder(nn.Module):
     def __init__(self, modules, rel_dim, attr_dim, img_feat_dim,
                  hidden_units=[3, 128, 128], heads = [2, 2], emb_dim = 100, pt_out_dim = 256,
                  dropout = 0.0, attn_dropout = 0.0, instance_norm = False,
-                 use_transformer_aggregator=False):
+                 img_aggregation_mode="mean"):
         super(MultiModalEncoder, self).__init__()
         self.modules = modules
         self.pt_out_dim = pt_out_dim
@@ -93,10 +77,25 @@ class MultiModalEncoder(nn.Module):
             self.meta_embedding_attr = nn.Linear(self.attr_dim, self.emb_dim)
             
         if 'img_patch' in self.modules:
-            self.img_patch_encoder = PatchAggregator(d_model=img_feat_dim, nhead=2, num_layers=1, dropout=self.dropout)
-            self.img_patch_embedding = nn.Linear(img_feat_dim, self.emb_dim)
-            # whether to use transformer_encoder
-            self.use_transformer_aggregator = use_transformer_aggregator
+            img_encode_dim = 256
+            self.img_patch_encoder = Mlps(in_features=img_feat_dim, 
+                        hidden_features=[512], out_features=img_encode_dim)
+            
+            # how to aggregate multi-view image features
+            self.img_aggregation_mode = img_aggregation_mode
+            if self.img_aggregation_mode == "mean":
+                pass
+            elif self.img_aggregation_mode == "max":
+                pass
+            elif self.img_aggregation_mode == "transformer":
+                self.use_transformer_aggregator = True
+                self.img_aggregator = \
+                    TransformerEncoderLayer(d_model=img_encode_dim, nhead=4)
+                self.multiview_encoder = PatchAggregator(d_model=img_encode_dim, nhead=4, num_layers=1, dropout=self.dropout)
+                self.multiview_norm = nn.LayerNorm(img_encode_dim)
+            else:
+                raise NotImplementedError
+            self.img_patch_embedding = nn.Linear(img_encode_dim, self.emb_dim)
         
         self.fusion = MultiModalFusion(modal_num=self.inner_view_num, with_weight=1)
         
@@ -145,20 +144,24 @@ class MultiModalEncoder(nn.Module):
                 start_object_idx = 0
                 for idx in range(batch_size):
                     scan_id = data_dict['scene_ids'][idx][0]
-                    
                     obj_count = data_dict['graph_per_obj_count'][idx][0]
                     obj_ids = data_dict['obj_ids'][start_object_idx: start_object_idx + obj_count]
                     img_patch_feat_scan = data_dict['obj_img_patches'][scan_id]
                     for obj in obj_ids:
                         img_patches = img_patch_feat_scan[obj]
-                        if self.use_transformer_aggregator:
-                            img_patches = img_patches.unsqueeze(0)
-                            img_patches_cls = self.img_patch_encoder(img_patches)
-                            obs_img_patch_emb = torch.cat([img_patches_cls]) if obs_img_patch_emb is None else \
-                                        torch.cat([obs_img_patch_emb, img_patches_cls])
-                        else:
-                            obs_img_patch_emb = torch.cat([img_patches]) if obs_img_patch_emb is None else \
-                                        torch.cat([obs_img_patch_emb, img_patches])
+                        img_patches_encoded = self.img_patch_encoder(img_patches)
+                        # aggregate multi-view image features
+                        if self.img_aggregation_mode == "mean":
+                            img_multiview_encode = torch.mean(img_patches_encoded, dim=0, keepdim=True)
+                        elif self.img_aggregation_mode == "max":
+                            img_multiview_encode = torch.max(img_patches_encoded, dim=0, keepdim=True)
+                        elif self.img_aggregation_mode == "transformer":
+                            img_patches_attn = self.multiview_encoder(img_patches_encoded.unsqueeze(0))
+                            img_patches_attn = self.multiview_norm(img_patches_attn)
+                            img_patches_attn = img_patches_attn.squeeze(0)
+                            img_multiview_encode, _ = torch.max(img_patches_encoded + img_patches_attn, dim=0, keepdim=True)
+                        obs_img_patch_emb = torch.cat([img_multiview_encode]) if obs_img_patch_emb is None else \
+                                    torch.cat([obs_img_patch_emb, img_multiview_encode])
                                     
                     start_object_idx += obj_count
                 emb = self.img_patch_embedding(obs_img_patch_emb)

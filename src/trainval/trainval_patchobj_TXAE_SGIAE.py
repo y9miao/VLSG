@@ -6,6 +6,8 @@ import sys
 from IPython import embed
 import numpy as np
 import subprocess
+
+from zmq import has
 src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ws_dir = os.path.dirname(src_dir)
 sys.path.append(src_dir)
@@ -110,6 +112,11 @@ class Trainer(EpochBasedTrainer):
         sg_rel_dim = cfg.sgaligner.model.rel_dim
         attr_dim = cfg.sgaligner.model.attr_dim
         img_patch_feat_dim = cfg.sgaligner.model.img_patch_feat_dim
+        if hasattr(cfg.sgaligner.model, 'multi_view_aggregator'):
+            multi_view_aggregator = cfg.sgaligner.model.multi_view_aggregator
+        else:
+            multi_view_aggregator = None
+            
         ## encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
         patch_encoder_dim = cfg.model.patch.encoder_dim
@@ -140,7 +147,8 @@ class Trainer(EpochBasedTrainer):
                                 drop,
                                 self.use_temporal,
                                 self.use_global_descriptor,
-                                self.global_descriptor_dim)
+                                self.global_descriptor_dim,
+                                multi_view_aggregator = multi_view_aggregator)
         
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained:

@@ -23,61 +23,9 @@ from models.sgaligner.src.aligner.networks.pointnet import PointNetfeat
 from torch_geometric.nn import GATConv, GCNConv
 
 # model utils
-from model_utils import Attention, TransformerEncoderLayer
+from model_utils import Attention, TransformerEncoderLayer, Mlps, PatchAggregator
 
-class PatchAggregator(nn.Module):
 
-    def __init__(self, d_model, nhead, num_layers, dropout):
-        super().__init__()
-        # transformer encoders
-        # self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout)
-        # self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
-        # Initialize the [CLS] token
-        # self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
-        
-        self.transformer_encoder = TransformerEncoderLayer(d_model=d_model, nhead=nhead)
-
-    def forward(self, x):
-        # # x: (batch_size, num_patches, d_model)
-        # cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
-        # x = torch.cat((cls_tokens, x), dim=1)
-        # output = self.transformer_encoder(x)
-        # cls_token_output = output[:, 0, :]
-        # return cls_token_output
-        
-        # x: (batch_size, num_patches, d_model)
-        output = self.transformer_encoder(x)
-        return output
-    
-class Mlps(nn.Module):
-    def __init__(self, in_features, hidden_features=[], out_features=None, act_layer=nn.GELU, drop=0.):
-        super().__init__()
-        out_features = out_features or in_features
-        self.direct_output = False
-
-        layers_list = []
-        if(len(hidden_features) <= 0):
-            assert out_features == in_features
-            self.direct_output  = True
-            # layers_list.append(nn.Linear(in_features, out_features))
-            # layers_list.append(nn.Dropout(drop))
-            
-        else:
-            hidden_features = [in_features] + hidden_features
-            for i in range(len(hidden_features)-1):
-                layers_list.append(nn.Linear(hidden_features[i], hidden_features[i+1]))
-                layers_list.append(act_layer())
-                layers_list.append(nn.Dropout(drop))
-            layers_list.append(nn.Linear(hidden_features[-1], out_features))
-            layers_list.append(nn.Dropout(drop))
-            
-        self.mlp_layers =  nn.Sequential(*layers_list)
-
-    def forward(self, x):
-        if self.direct_output:
-            return x
-        else:
-            return self.mlp_layers(x)
     
 class MultiModalFusion(nn.Module):
     def __init__(self, modal_num, with_weight=1):
