@@ -42,6 +42,7 @@ class MultiModalFusion(nn.Module):
 class MultiModalEncoder(nn.Module):
     def __init__(self, modules, rel_dim, attr_dim, img_feat_dim,
                  hidden_units=[3, 128, 128], heads = [2, 2], emb_dim = 100, pt_out_dim = 256,
+                 img_emb_dim = 256,
                  dropout = 0.0, attn_dropout = 0.0, instance_norm = False,
                  img_aggregation_mode="mean"):
         super(MultiModalEncoder, self).__init__()
@@ -49,6 +50,7 @@ class MultiModalEncoder(nn.Module):
         self.pt_out_dim = pt_out_dim
         self.rel_dim = rel_dim
         self.emb_dim = emb_dim
+        self.img_emb_dim = img_emb_dim
         self.attr_dim =  attr_dim
         self.hidden_units = hidden_units
         self.heads = heads
@@ -95,7 +97,7 @@ class MultiModalEncoder(nn.Module):
                 self.multiview_norm = nn.LayerNorm(img_encode_dim)
             else:
                 raise NotImplementedError
-            self.img_patch_embedding = nn.Linear(img_encode_dim, self.emb_dim)
+            self.img_patch_embedding = nn.Linear(img_encode_dim, self.img_emb_dim)
         
         self.fusion = MultiModalFusion(modal_num=self.inner_view_num, with_weight=1)
         

@@ -124,6 +124,7 @@ class Trainer(EpochBasedTrainer):
         obj_embedding_dim = cfg.model.obj.embedding_dim
         obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
         obj_encoder_dim = cfg.model.obj.encoder_dim
+        img_emb_dim = cfg.sgaligner.model.img_emb_dim
         ## temporal 
         self.use_temporal = cfg.train.loss.use_temporal
         ## global descriptor
@@ -148,7 +149,8 @@ class Trainer(EpochBasedTrainer):
                                 self.use_temporal,
                                 self.use_global_descriptor,
                                 self.global_descriptor_dim,
-                                multi_view_aggregator = multi_view_aggregator)
+                                multi_view_aggregator = multi_view_aggregator,
+                                img_emb_dim = img_emb_dim,)
         
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained:
