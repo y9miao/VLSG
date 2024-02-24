@@ -1,0 +1,11 @@
+data :
+  name            : Scan3R
+  root_dir        : '' # to be read in code from env varia  
+  rescan: True
+  resplit: True
+  feature_2D_name: "features_2D/EVA"
+
+model:
+  name: EVA
+  version: "ViT-L/14"
+  device: "cpu"

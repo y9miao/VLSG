@@ -1,4 +1,4 @@
-# get into VLSG space for scan3r data info
+# get into VLSG space for scannet data info
 from ast import arg
 import os
 import os.path as osp
@@ -19,60 +19,39 @@ from PIL import Image
 from tqdm import tqdm
 from zmq import device
 
-class Scan3rEvaGenerator():
+class ScannetEvaGenerator():
     def __init__(self, cfg, split, device, uni3d_dir, log_dir):
-        import common, scan3r
+        import common, scannet_utils
         self.cfg = cfg
         self.device = torch.device(device)
         
-        # 3RScan data info
-        ## sgaliner related cfg
+        self.cfg = cfg
+        
+        # scannet scans info
         self.split = split
-        self.use_predicted = cfg.sgaligner.use_predicted
-        self.sgaliner_model_name = cfg.sgaligner.model_name
-        self.scan_type = cfg.sgaligner.scan_type
-        ## data dir
-        self.data_root_dir = cfg.data.root_dir
-        scan_dirname = '' if self.scan_type == 'scan' else 'out'
-        scan_dirname = osp.join(scan_dirname, 'predicted') if self.use_predicted else scan_dirname
-        self.scans_dir = osp.join(cfg.data.root_dir, scan_dirname)
-        self.scans_files_dir = osp.join(self.scans_dir, 'files')
-        self.mode = 'orig' if self.split == 'train' else cfg.sgaligner.val.data_mode
-        self.scans_files_dir_mode = osp.join(self.scans_files_dir, self.mode)
-        self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
-        ## scans info
-        self.rescan = cfg.data.rescan
-        scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')
-        all_scan_data = common.load_json(scan_info_file)
-        self.refscans2scans = {}
-        self.scans2refscans = {}
-        for scan_data in all_scan_data:
-            ref_scan_id = scan_data['reference']
-            self.refscans2scans[ref_scan_id] = [ref_scan_id]
-            self.scans2refscans[ref_scan_id] = ref_scan_id
-            if self.rescan:
-                for scan in scan_data['scans']:
-                    self.refscans2scans[ref_scan_id].append(scan['reference'])
-                    self.scans2refscans[scan['reference']] = ref_scan_id
-        self.resplit = "resplit_" if cfg.data.resplit else ""
-        if self.rescan:
-            ref_scans = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
-            self.scan_ids = []
-            for ref_scan in ref_scans:
-                self.scan_ids += self.refscans2scans[ref_scan]
-        else:
-            self.scan_ids = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
-        ## images info
-        self.image_paths = {}
+        scans_info_file = osp.join(cfg.data.root_dir, 'files', 'scans_{}.pkl'.format(split))
+        self.rooms_info = common.load_pkl_data(scans_info_file)
+        self.scan_ids = []
+        self.scan2room = {}
+        for room_id in self.rooms_info:
+            self.scan_ids += self.rooms_info[room_id]
+            for scan_id in self.rooms_info[room_id]:
+                self.scan2room[scan_id] = room_id
+        # out dir
+        feature2D_name = cfg.data.feature_2D_name
+        self.feat_2D_out_dir = osp.join(cfg.data.root_dir, "files", feature2D_name)
+        common.ensure_dir(self.feat_2D_out_dir)
+        
+        # get image paths of fall images for each scan, step will be down externally
+        self.data_split_dir = osp.join(cfg.data.root_dir, split)
+        self.img_paths = {}
         for scan_id in self.scan_ids:
-            self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id, 2)
+            scan_folder = osp.join(self.data_split_dir, scan_id)
+            image_folder = osp.join(scan_folder, 'color')
+            img_names = os.listdir(image_folder)
+            self.img_paths[scan_id] = {img_name: osp.join(image_folder, img_name) for img_name in img_names}
         
-        ## out dir 
-        self.model_name = cfg.model.name
-        self.out_dir = osp.join(self.scans_files_dir, 'Features2D', self.model_name)
-        common.ensure_dir(self.out_dir)
-        
-        self.log_file = osp.join(log_dir, "log_file_{}.txt".format(self.split))
+        self.log_file = osp.join(log_dir, "log_file_scannet_{}.txt".format(self.split))
         
     def register_model(self, ckpt):
         # eva
@@ -104,7 +83,7 @@ class Scan3rEvaGenerator():
     # generate VLAD for a scan
     
         # get load images
-        img_paths = self.image_paths[scan_id]
+        img_paths = self.img_paths[scan_id]
         imgs_features = {}
         for frame_idx in img_paths:
             img_path = img_paths[frame_idx]
@@ -117,7 +96,7 @@ class Scan3rEvaGenerator():
         return imgs_features
     
     def generateFeatures(self):
-        import common, scan3r
+        import common
         img_num = 0
         self.feature_generation_time = 0.0
         for scan_id in tqdm(self.scan_ids):
@@ -134,7 +113,7 @@ class Scan3rEvaGenerator():
 # args
 def parse_args():
     import argparse
-    parser = argparse.ArgumentParser(description='Scan3R 3D feature generator')
+    parser = argparse.ArgumentParser(description='Scannet 3D feature generator')
     parser.add_argument('--cfg', type=str, default='', help='path to config file')
     parser.add_argument('--split', type=str, default='test', help='split')
     # device
@@ -180,7 +159,7 @@ def main(args):
     cfg_file = cfg_file
     cfg = update_config(config, cfg_file, ensure_dir = False)
     
-    scan3r_anyloc_vlad_generator = Scan3rEvaGenerator(cfg, split, device, uni3d_dir, log_dir)
+    scan3r_anyloc_vlad_generator = ScannetEvaGenerator(cfg, split, device, uni3d_dir, log_dir)
     scan3r_anyloc_vlad_generator.register_model(ckpt)
     scan3r_anyloc_vlad_generator.generateFeatures()
     
