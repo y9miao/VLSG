@@ -159,3 +159,36 @@ def ave_list(lists):
         return 0
     else:
         return sum(lists)*1.0/len(lists)
+    
+import os, threading, queue, subprocess
+def RunBashBatch(commands, jobs_per_step = 1):
+    class BashThread(threading.Thread):
+        def __init__(self,task_queue, id):
+            threading.Thread.__init__(self)
+            self.queue = task_queue
+            self.th_id = id
+            self.start()
+
+        def run(self):
+            while True:
+                try:
+                    command = self.queue.get(block=False)
+                    subprocess.call(command, shell=True)
+                    self.queue.task_done()
+                except queue.Empty:
+                    break
+    class BashThreadPool():
+        def __init__(self,task_queue,thread_num):
+            self.queue = task_queue
+            self.pool = []
+            for i in range(thread_num):
+                self.pool.append(BashThread(task_queue, i))
+
+        def joinAll(self):
+            self.queue.join()
+    # task submission
+    commands_queue = queue.Queue()
+    for command in commands:
+        commands_queue.put(command)
+    map_eval_thread_pool = BashThreadPool(commands_queue, jobs_per_step)
+    map_eval_thread_pool.joinAll()

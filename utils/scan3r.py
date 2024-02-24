@@ -78,12 +78,23 @@ def load_all_poses(data_dir, scan_id, frame_idxs):
     return frame_poses
 
 def load_frame_idxs(data_dir, scan_id, skip=None):
-    num_frames = len(glob(osp.join(data_dir, scan_id, 'sequence', '*.jpg')))
+    # num_frames = len(glob(osp.join(data_dir, scan_id, 'sequence', '*.jpg')))
+
+    # if skip is None:
+    #     frame_idxs = ['{:06d}'.format(frame_idx) for frame_idx in range(0, num_frames)]
+    # else:
+    #     frame_idxs = ['{:06d}'.format(frame_idx) for frame_idx in range(0, num_frames, skip)]
+    # return frame_idxs
+    
+    frames_paths = glob(osp.join(data_dir, scan_id, 'sequence', '*.jpg'))
+    frame_names = [osp.basename(frame_path) for frame_path in frames_paths]
+    frame_idxs = [frame_name.split('.')[0].split('-')[-1] for frame_name in frame_names]
+    frame_idxs.sort()
 
     if skip is None:
-        frame_idxs = ['{:06d}'.format(frame_idx) for frame_idx in range(0, num_frames)]
+        frame_idxs = frame_idxs
     else:
-        frame_idxs = ['{:06d}'.format(frame_idx) for frame_idx in range(0, num_frames, skip)]
+        frame_idxs = [frame_idx for frame_idx in frame_idxs[::skip]]
     return frame_idxs
 
 def load_frame_paths(data_dir, scan_id, skip=None):
