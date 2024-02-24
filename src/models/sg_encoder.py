@@ -154,7 +154,7 @@ class MultiModalEncoder(nn.Module):
                         if self.img_aggregation_mode == "mean":
                             img_multiview_encode = torch.mean(img_patches_encoded, dim=0, keepdim=True)
                         elif self.img_aggregation_mode == "max":
-                            img_multiview_encode = torch.max(img_patches_encoded, dim=0, keepdim=True)
+                            img_multiview_encode, _ = torch.max(img_patches_encoded, dim=0, keepdim=True)
                         elif self.img_aggregation_mode == "transformer":
                             img_patches_attn = self.multiview_encoder(img_patches_encoded.unsqueeze(0))
                             img_patches_attn = self.multiview_norm(img_patches_attn)
