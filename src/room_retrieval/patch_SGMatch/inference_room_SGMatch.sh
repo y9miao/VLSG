@@ -14,5 +14,5 @@ source $CONDA_BIN/activate GCVit
 
 # go into VLSG space
 cd $VLSG_SPACE
-python ./src/room_retrieval/patch_SGIE_aligner/inference_room.py \
---config ./src/room_retrieval/patch_SGIE_aligner/inference_room_PARG.yaml
+python ./src/room_retrieval/patch_SGMatch/inference_room_SGMatch.py \
+--config ./src/room_retrieval/patch_SGMatch/inference_room_PARGI.yaml

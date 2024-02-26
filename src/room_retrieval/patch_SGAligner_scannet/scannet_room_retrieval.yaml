@@ -19,20 +19,22 @@ data:
     patch_h: 24
   cross_scene:
     use_cross_scene: True
-    num_scenes: 49 # number of scenes 
+    num_scenes: -1 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
     use_tf_idf: False
+  scene_graph:
+    obj_img_patch: "Features3D/obj_dinov2_top10_l3"
+    obj_topk: 10
+    obj_patch_num: 100
 
 # for scene graph encoder
 sgaligner:
   seed: 42
   model_name    : 'sgaligner'
-  modules       : ['point', 'gat', 'rel']
+  modules       : ['point', 'gat', 'rel', 'img_patch']
   use_predicted : False
   registration  : False
   scan_type     : 'scan'
-  img_transformer: False
-
   preprocess :
     pc_resolutions      : [64, 128, 256, 512]
     subscenes_per_scene : 1
@@ -44,7 +46,9 @@ sgaligner:
     rel_dim             : 9
     attr_dim            : 164
     img_patch_feat_dim  : 1536
+    img_emb_dim: 256
     alignment_thresh    : 0.4
+    multi_view_aggregator: 'max'
 
   pc_res: 512
   use_pretrained: False
@@ -62,15 +66,17 @@ model:
   # patch feature encoder
   patch:
     hidden_dims: [512, 512, 512] # last is the out dim
+    gcn_layers: 0
     encoder_dim: 400
   # 3D obj embedding encoder
   obj:
-    embedding_dim: 300 # fixed
+    embedding_dim: 556 # fixed
     embedding_hidden_dims: [512, 512]
     encoder_dim: 400
   other:
     drop: 0.0
 
+# for training loss
 # for training
 train:
   batch_size: 32
@@ -113,14 +119,13 @@ val:
   batch_size: 1
   num_workers: 1
   room_retrieval:
-    retrieval: True
     epsilon_th: 0.8
-    method_name: "Test_PGR9_scannet_X50_Retrie_E8"
+    method_name: "SGA_PAGRI_E15_scannet_XAll"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./week12/Test_PGR9_scannet/epoch-8.pth.tar"
+  resume: "./week13/SGAligner_PAGRI_scannet/epoch-15.pth.tar"
 
 # mode
-mode: "val"
+mode: "train"

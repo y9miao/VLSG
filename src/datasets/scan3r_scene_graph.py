@@ -286,7 +286,8 @@ class SceneGraphPairDataset(data.Dataset):
         if self.split == 'val' or self.split == 'test':
             self.candidate_scans = {}
             for scan_id in self.scan_ids:
-                self.candidate_scans[scan_id] = self.sampleCandidateScenesForEachScan(scan_id, self.num_scenes)
+                self.candidate_scans[scan_id] = scan3r.sampleCandidateScenesForEachScan(
+                    scan_id, self.scan_ids, self.refscans2scans, self.scans2refscans, self.num_scenes)
             
         # generate data items given multiple scans
         self.data_items = self.generateDataItems()
@@ -350,15 +351,6 @@ class SceneGraphPairDataset(data.Dataset):
                 obj_nyu_category = int(obj_item['nyu40'])
                 self.obj_3D_anno[scan_id][obj_id] = (scan_id, obj_id, obj_nyu_category)
 
-    def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
-        candidate_scans = []
-        scans_same_scene = self.refscans2scans[self.scans2refscans[scan_id]]
-        # sample other scenes
-        for scan in self.all_scans_split:
-            if scan not in scans_same_scene:
-                candidate_scans.append(scan)
-        sampled_scans = random.sample(candidate_scans, num_scenes)
-        return sampled_scans
     
     # def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
     #     candidate_scans = {}

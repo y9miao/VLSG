@@ -93,6 +93,7 @@ class Trainer(EpochBasedTrainer):
             backbone = None
         
         # get patch object aligner
+        drop = cfg.model.other.drop
         ## 2Dbackbone
         num_reduce = cfg.model.backbone.num_reduce
         backbone_dim = cfg.model.backbone.backbone_dim
@@ -102,14 +103,24 @@ class Trainer(EpochBasedTrainer):
         sg_rel_dim = cfg.sgaligner.model.rel_dim
         attr_dim = cfg.sgaligner.model.attr_dim
         img_patch_feat_dim = cfg.sgaligner.model.img_patch_feat_dim
+        if hasattr(cfg.sgaligner.model, 'multi_view_aggregator'):
+            multi_view_aggregator = cfg.sgaligner.model.multi_view_aggregator
+        else:
+            multi_view_aggregator = None
+            
         ## encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
         patch_encoder_dim = cfg.model.patch.encoder_dim
+        patch_gcn_layers = cfg.model.patch.gcn_layers
         obj_embedding_dim = cfg.model.obj.embedding_dim
         obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
         obj_encoder_dim = cfg.model.obj.encoder_dim
-        
-        drop = cfg.model.other.drop
+        img_emb_dim = cfg.sgaligner.model.img_emb_dim
+        ## temporal 
+        self.use_temporal = cfg.train.loss.use_temporal
+        ## global descriptor
+        self.use_global_descriptor = cfg.train.loss.use_global_descriptor
+        self.global_descriptor_dim = cfg.model.global_descriptor_dim
         
         self.model = PatchSGIEAligner(backbone,
                                 num_reduce,
@@ -117,6 +128,7 @@ class Trainer(EpochBasedTrainer):
                                 img_rotate, 
                                 patch_hidden_dims,
                                 patch_encoder_dim,
+                                patch_gcn_layers,
                                 obj_embedding_dim,
                                 obj_embedding_hidden_dims,
                                 obj_encoder_dim,
@@ -125,7 +137,11 @@ class Trainer(EpochBasedTrainer):
                                 attr_dim,
                                 img_patch_feat_dim,
                                 drop,
-                                cfg.train.loss.use_temporal)
+                                self.use_temporal,
+                                self.use_global_descriptor,
+                                self.global_descriptor_dim,
+                                multi_view_aggregator = multi_view_aggregator,
+                                img_emb_dim = img_emb_dim,)
         
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained:

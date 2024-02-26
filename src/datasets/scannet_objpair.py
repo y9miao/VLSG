@@ -34,6 +34,7 @@ class ScannetPatchObjDataset(data.Dataset):
         
         # scannet scans info
         self.split = split
+        self.sgaligner_modules = cfg.sgaligner.modules
         scans_info_file = osp.join(cfg.data.root_dir, 'files', 'scans_{}.pkl'.format(split))
         self.rooms_info = common.load_pkl_data(scans_info_file)
         self.scan_ids = []
@@ -93,6 +94,17 @@ class ScannetPatchObjDataset(data.Dataset):
         # 3D scene graph info
         ## load 3D scene graph information
         self.load3DSceneGraphs()
+        ## load obj_visual features
+        self.img_patch_feat_dim = self.cfg.sgaligner.model.img_patch_feat_dim
+        obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
+        self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
+        self.obj_topk = self.cfg.data.scene_graph.obj_topk
+        self.obj_img_patches_scan_tops = {}
+        if 'img_patch' in self.sgaligner_modules:
+            for scan_id in self.scan_ids:
+                obj_visual_file = osp.join(self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
+                self.obj_img_patches_scan_tops[scan_id] = common.load_pkl_data(obj_visual_file)
+                
         ## 3D pc augment
         self.use_aug = cfg.train.data_aug.use_aug
         self.elastic_distortion = scannet_utils.ElasticDistortion(
@@ -404,6 +416,45 @@ class ScannetPatchObjDataset(data.Dataset):
             pcs_flatten = scene_graphs_['tot_obj_pts'].reshape(-1, 3)
             pcs_distorted_flatten = self.elastic_distortion(pcs_flatten)
             scene_graphs_['tot_obj_pts'] = pcs_distorted_flatten.reshape(-1, num_obs, 3)
+        ### img patch features 
+        if 'img_patch' in self.sgaligner_modules:
+            obj_img_patches = {}
+            obj_count_ = 0
+            for scan_idx, scan_id in enumerate(scene_graphs_['scene_ids']):
+                scan_id = scan_id[0]
+                
+                obj_start_idx, obj_end_idx = obj_count_, obj_count_ + scene_graphs_['tot_obj_count'][scan_idx]
+                obj_ids = scene_graphs_['obj_ids'][obj_start_idx: obj_end_idx]
+                obj_img_patches_scan_tops = self.obj_img_patches_scan_tops[scan_id]
+                obj_img_patches_scan = obj_img_patches_scan_tops['obj_visual_emb']
+                obj_top_frames = obj_img_patches_scan_tops['obj_image_votes_topK']
+                
+                obj_img_patches[scan_id] = {}
+                for obj_id in obj_ids:
+                    if obj_id not in obj_top_frames:
+                        obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
+                        obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
+                        continue
+                    
+                    obj_img_patch_embs_list = []
+                    obj_frames = obj_top_frames[obj_id][:self.obj_topk] if len(obj_top_frames[obj_id]) >= self.obj_topk \
+                        else obj_top_frames[obj_id]
+                    for frame_idx in obj_frames:
+                        if obj_img_patches_scan[obj_id][frame_idx] is not None:
+                            embs_frame = obj_img_patches_scan[obj_id][frame_idx]
+                            embs_frame = embs_frame.reshape(1, -1) if embs_frame.ndim == 1 else embs_frame
+                            obj_img_patch_embs_list.append(embs_frame)
+                        
+                    if len(obj_img_patch_embs_list) == 0:
+                        obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
+                    else:
+                        obj_img_patch_embs = np.concatenate(obj_img_patch_embs_list, axis=0)
+                        
+                    obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
+                    
+                obj_count_ += scene_graphs_['tot_obj_count'][scan_idx]
+            scene_graphs_['obj_img_patches'] = obj_img_patches
+        
         data_dict['scene_graphs'] = scene_graphs_
         
         ## obj info

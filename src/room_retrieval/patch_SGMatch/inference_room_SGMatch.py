@@ -38,10 +38,10 @@ import torch.nn.functional as F
 from mmdet.models import build_backbone
 from mmcv import Config
 # from models.GCVit.models import gc_vit
-from models.patch_SGIE_aligner import PatchSGIEAligner
+from models.patch_scene_graph_match import PatchSceneGraphAligner
 # dataset
 from datasets.loaders import get_test_dataloader, get_val_dataloader
-from datasets.scan3r_objpair_XTAE_SGI import PatchObjectPairXTAESGIDataSet
+from datasets.scan3r_scene_graph import SceneGraphPairDataset
 
 def _to_channel_last(x):
     """
@@ -73,8 +73,8 @@ class RoomRetrivalScore():
         
         # dataloader
         start_time = time.time()
-        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = PatchObjectPairXTAESGIDataSet)
-        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = PatchObjectPairXTAESGIDataSet)
+        val_dataset, val_data_loader = get_val_dataloader(cfg, Dataset = SceneGraphPairDataset)
+        test_dataset, test_data_loader = get_test_dataloader(cfg, Dataset = SceneGraphPairDataset)
         # register dataloader
         self.val_data_loader = val_data_loader
         self.val_dataset = val_dataset
@@ -103,6 +103,8 @@ class RoomRetrivalScore():
         self.output_dir = osp.join(cfg.output_dir, self.method_name)
         common.ensure_dir(self.output_dir)
 
+        self.use_global_descriptor = False
+
     def load_snapshot(self, snapshot, fix_prefix=True):
         state_dict = torch.load(snapshot, map_location=torch.device('cpu'))
         # Load model
@@ -119,66 +121,54 @@ class RoomRetrivalScore():
             backbone_pretrained_file = cfg.model.backbone.pretrained
             backbone_cfg.model['backbone']['pretrained'] = backbone_pretrained_file
             backbone = build_backbone(backbone_cfg.model['backbone'])
-        
+            
         # get patch object aligner
-        drop = cfg.model.other.drop
         ## 2Dbackbone
         num_reduce = cfg.model.backbone.num_reduce
         backbone_dim = cfg.model.backbone.backbone_dim
-        img_rotate = cfg.data.img_encoding.img_rotate
-        ## scene graph encoder
-        sg_modules = cfg.sgaligner.modules
-        sg_rel_dim = cfg.sgaligner.model.rel_dim
-        attr_dim = cfg.sgaligner.model.attr_dim
-        img_patch_feat_dim = cfg.sgaligner.model.img_patch_feat_dim
-        if hasattr(cfg.sgaligner.model, 'multi_view_aggregator'):
-            multi_view_aggregator = cfg.sgaligner.model.multi_view_aggregator
-        else:
-            multi_view_aggregator = None
-            
-        ## encoders
+        ## 2D encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
         patch_encoder_dim = cfg.model.patch.encoder_dim
-        patch_gcn_layers = cfg.model.patch.gcn_layers
-        obj_embedding_dim = cfg.model.obj.embedding_dim
-        obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
-        obj_encoder_dim = cfg.model.obj.encoder_dim
-        img_emb_dim = cfg.sgaligner.model.img_emb_dim
-        ## temporal 
-        self.use_temporal = cfg.train.loss.use_temporal
-        ## global descriptor
-        self.use_global_descriptor = cfg.train.loss.use_global_descriptor
-        self.global_descriptor_dim = cfg.model.global_descriptor_dim
+        ## scene graph encoder
+        scene_graph_modules = cfg.sg_encoder.model.modules
+        scene_graph_in_dims = cfg.sg_encoder.model.scene_graph_in_dims
+        scene_graph_encode_depth = cfg.sg_encoder.model.scene_graph_encode_depth
+        scene_graph_emb_dims = cfg.sg_encoder.model.scene_graph_emb_dims
+        gat_hidden_units = cfg.sg_encoder.model.gat_hidden_units
+        gat_heads = cfg.sg_encoder.model.gat_heads
+        scene_graph_node_dim = cfg.sg_encoder.model.scene_graph_node_dim
+        node_out_dim = cfg.sg_encoder.model.node_out_dim
+        multiview_transformer = cfg.sg_encoder.img_transformer
         
-        self.model = PatchSGIEAligner(backbone,
+        use_temporal = cfg.train.loss.use_temporal
+        drop = cfg.model.other.drop
+        
+        self.model = PatchSceneGraphAligner(
+                                backbone,
                                 num_reduce,
                                 backbone_dim,
-                                img_rotate, 
                                 patch_hidden_dims,
                                 patch_encoder_dim,
-                                patch_gcn_layers,
-                                obj_embedding_dim,
-                                obj_embedding_hidden_dims,
-                                obj_encoder_dim,
-                                sg_modules,
-                                sg_rel_dim,
-                                attr_dim,
-                                img_patch_feat_dim,
+                                scene_graph_modules,
+                                scene_graph_in_dims,
+                                scene_graph_encode_depth,
+                                scene_graph_emb_dims,
+                                gat_hidden_units,
+                                gat_heads,
+                                scene_graph_node_dim,
+                                node_out_dim,
                                 drop,
-                                self.use_temporal,
-                                self.use_global_descriptor,
-                                self.global_descriptor_dim,
-                                multi_view_aggregator = multi_view_aggregator,
-                                img_emb_dim = img_emb_dim,)
+                                use_temporal,
+                                multiview_transformer = multiview_transformer)
         
-        # load pretrained sgaligner if required
-        if cfg.sgaligner.use_pretrained:
-            assert os.path.isfile(cfg.sgaligner.pretrained), 'Pretrained sgaligner not found.'
-            sgaligner_dict = torch.load(cfg.sgaligner.pretrained, map_location=torch.device('cpu'))
-            sgaligner_model = sgaligner_dict['model']
-            # remove weights of the last layer
-            sgaligner_model.pop('fusion.weight')
-            self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=False)
+        # # load pretrained sgaligner if required
+        # if cfg.sgaligner.use_pretrained:
+        #     assert os.path.isfile(cfg.sgaligner.pretrained), 'Pretrained sgaligner not found.'
+        #     sgaligner_dict = torch.load(cfg.sgaligner.pretrained, map_location=torch.device('cpu'))
+        #     sgaligner_model = sgaligner_dict['model']
+        #     # remove weights of the last layer
+        #     sgaligner_model.pop('fusion.weight')
+        #     self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=False)
         
         # load snapshot if required
         if cfg.other.use_resume:
@@ -209,11 +199,6 @@ class RoomRetrivalScore():
                     features = _to_channel_last(features)
                 patch_features = self.model.reduce_layers(features)
                 patch_features = self.model.patch_encoder(patch_features)
-                # to channel first
-                patch_features = _to_channel_first(patch_features)
-                patch_features = self.model.patch_gcn(patch_features)
-                # to channel last
-                patch_features = _to_channel_last(patch_features)
                 forward_time += time.time() - start_time
                 patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
             patch_features_batch = patch_features if patch_features_batch is None \
@@ -221,7 +206,7 @@ class RoomRetrivalScore():
         
         # object features
         obj_3D_embeddings = self.model.forward_scene_graph(data_dict)  # (O, C*)
-        obj_3D_embeddings = self.model.obj_embedding_encoder(obj_3D_embeddings) # (O, C*)
+        obj_3D_embeddings = self.model.sg_node_dim_match(obj_3D_embeddings) # (O, C*)
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
         return patch_features_batch, obj_3D_embeddings_norm, forward_time
     
@@ -253,7 +238,7 @@ class RoomRetrivalScore():
         
         # object features
         obj_3D_embeddings = self.model.forward_scene_graph(data_dict)  # (O, C*)
-        obj_3D_embeddings = self.model.obj_embedding_encoder(obj_3D_embeddings) # (O, C*)
+        obj_3D_embeddings = self.model.sg_node_dim_match(obj_3D_embeddings) # (O, C*)
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
         
         # global descriptor
@@ -299,7 +284,7 @@ class RoomRetrivalScore():
             assoc_data_dict = data_dict['assoc_data_dict'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict['candata_scan_obj_idxs']
-            cadidate_scans_semantic_ids = assoc_data_dict['cadidate_scans_semantic_ids']
+            cadidate_scans_semantic_ids = None
             if self.use_tf_idf:
                 # reweight_matrix_scans = assoc_data_dict['reweight_matrix_scans']
                 # reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
@@ -385,7 +370,7 @@ class RoomRetrivalScore():
             assoc_data_dict_temp = data_dict['assoc_data_dict_temp'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict_temp['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict_temp['candata_scan_obj_idxs']
-            cadidate_scans_semantic_ids = assoc_data_dict_temp['cadidate_scans_semantic_ids']
+            cadidate_scans_semantic_ids = None
             if self.use_tf_idf:
                 # reweight_matrix_scans = assoc_data_dict_temp['reweight_matrix_scans']
                 # reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)

@@ -4,7 +4,7 @@ import os.path as osp
 import sys
 from tracemalloc import start
 from yaml import scan
-vlsg_dir = "/home/yang/big_ssd/Scan3R/VLSG"
+vlsg_dir = osp.join(osp.dirname(osp.abspath(__file__)), '..', '..', '..')
 sys.path.insert(0, vlsg_dir)
 from utils import common, scan3r
 
@@ -34,18 +34,13 @@ class Scan3rGCVitGenerator():
         self.cfg = cfg
         
         # 3RScan data info
-        ## sgaliner related cfg
         self.split = split
-        self.use_predicted = cfg.sgaligner.use_predicted
-        self.sgaliner_model_name = cfg.sgaligner.model_name
-        self.scan_type = cfg.sgaligner.scan_type
         ## data dir
         self.data_root_dir = cfg.data.root_dir
-        scan_dirname = '' if self.scan_type == 'scan' else 'out'
-        scan_dirname = osp.join(scan_dirname, 'predicted') if self.use_predicted else scan_dirname
+        scan_dirname = ''
         self.scans_dir = osp.join(cfg.data.root_dir, scan_dirname)
         self.scans_files_dir = osp.join(self.scans_dir, 'files')
-        self.mode = 'orig' if self.split == 'train' else cfg.sgaligner.val.data_mode
+        self.mode = 'orig'
         self.scans_files_dir_mode = osp.join(self.scans_files_dir, self.mode)
         self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
         ## scans info
@@ -82,10 +77,7 @@ class Scan3rGCVitGenerator():
         self.num_reduce = cfg.model.backbone.num_reduce
         self.backbone_dim = cfg.model.backbone.backbone_dim
         self.img_rotate = cfg.data.img_encoding.img_rotate
-        ## scene graph encoder
-        self.sg_modules = cfg.sgaligner.modules
-        self.sg_rel_dim = cfg.sgaligner.model.rel_dim
-        self.attr_dim = cfg.sgaligner.model.attr_dim
+
         ## encoders
         self.patch_hidden_dims = cfg.model.patch.hidden_dims
         self.patch_encoder_dim = cfg.model.patch.encoder_dim
@@ -115,25 +107,13 @@ class Scan3rGCVitGenerator():
         backbone_cfg = Config.fromfile(backbone_cfg_file)
         backbone_cfg.model['backbone']['pretrained'] = self.cfg.model.pretrained
         backbone = build_backbone(backbone_cfg.model['backbone'])
-        self.model = PatchSGAligner(backbone,
-                                self.num_reduce,
-                                self.backbone_dim,
-                                self.img_rotate, 
-                                self.patch_hidden_dims,
-                                self.patch_encoder_dim,
-                                self.obj_embedding_dim,
-                                self.obj_embedding_hidden_dims,
-                                self.obj_encoder_dim,
-                                self.sg_modules,
-                                self.sg_rel_dim,
-                                self.attr_dim,
-                                self.drop)
-        self.model.eval()
+        self.backbone = backbone
+        self.backbone.eval()
         self.device = torch.device("cuda")
-        self.model.to(self.device)
+        self.backbone.to(self.device)
         
     def inference(self, imgs_tensor):
-        feature = self.model.backbone(imgs_tensor)[-1]
+        feature = self.backbone(imgs_tensor)[-1]
         return feature
         
     def generateFeaturesEachScan(self, scan_id):
@@ -207,13 +187,28 @@ class Scan3rGCVitGenerator():
             self.feature_generation_time, img_num, self.feature_generation_time / img_num)
         with open(self.log_file, 'a') as f:
             f.write(log_str)
+            
+# args
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description='Scan3R 3D feature generator')
+    parser.add_argument('--cfg', type=str, default='', help='path to config file')
+    parser.add_argument('--split', type=str, default='test', help='split')
+    # add args of root dir
+    parser.add_argument('--root_dir', type=str, default='', help='root dir')
+        
+    args = parser.parse_args()
+    return args
 
 def main():
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
+    args = parse_args()
+    root_dir = args.root_dir
+    cfg_file = args.cfg
+    split = args.split
+    os.environ['Scan3R_ROOT_DIR'] = root_dir
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/img_features/GCVit/gc_vit_generator.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_gcvit_generator = Scan3rGCVitGenerator(cfg, 'train')
+    scan3r_gcvit_generator = Scan3rGCVitGenerator(cfg, split)
     scan3r_gcvit_generator.register_model()
     scan3r_gcvit_generator.generateFeatures()
     

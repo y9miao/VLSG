@@ -135,6 +135,8 @@ class RoomRetrivalScore():
             backbone = build_backbone(backbone_cfg.model['backbone'])
         
         # get patch object aligner
+        # get patch object aligner
+        drop = cfg.model.other.drop
         ## 2Dbackbone
         num_reduce = cfg.model.backbone.num_reduce
         backbone_dim = cfg.model.backbone.backbone_dim
@@ -144,14 +146,24 @@ class RoomRetrivalScore():
         sg_rel_dim = cfg.sgaligner.model.rel_dim
         attr_dim = cfg.sgaligner.model.attr_dim
         img_patch_feat_dim = cfg.sgaligner.model.img_patch_feat_dim
+        if hasattr(cfg.sgaligner.model, 'multi_view_aggregator'):
+            multi_view_aggregator = cfg.sgaligner.model.multi_view_aggregator
+        else:
+            multi_view_aggregator = None
+            
         ## encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
         patch_encoder_dim = cfg.model.patch.encoder_dim
+        patch_gcn_layers = cfg.model.patch.gcn_layers
         obj_embedding_dim = cfg.model.obj.embedding_dim
         obj_embedding_hidden_dims = cfg.model.obj.embedding_hidden_dims
         obj_encoder_dim = cfg.model.obj.encoder_dim
-        
-        drop = cfg.model.other.drop
+        img_emb_dim = cfg.sgaligner.model.img_emb_dim
+        ## temporal 
+        self.use_temporal = cfg.train.loss.use_temporal
+        ## global descriptor
+        self.use_global_descriptor = cfg.train.loss.use_global_descriptor
+        self.global_descriptor_dim = cfg.model.global_descriptor_dim
         
         self.model = PatchSGIEAligner(backbone,
                                 num_reduce,
@@ -159,6 +171,7 @@ class RoomRetrivalScore():
                                 img_rotate, 
                                 patch_hidden_dims,
                                 patch_encoder_dim,
+                                patch_gcn_layers,
                                 obj_embedding_dim,
                                 obj_embedding_hidden_dims,
                                 obj_encoder_dim,
@@ -167,16 +180,12 @@ class RoomRetrivalScore():
                                 attr_dim,
                                 img_patch_feat_dim,
                                 drop,
-                                cfg.train.loss.use_temporal)
+                                self.use_temporal,
+                                self.use_global_descriptor,
+                                self.global_descriptor_dim,
+                                multi_view_aggregator = multi_view_aggregator,
+                                img_emb_dim = img_emb_dim,)
         
-        # load pretrained sgaligner if required
-        if cfg.sgaligner.use_pretrained:
-            assert os.path.isfile(cfg.sgaligner.pretrained), 'Pretrained sgaligner not found.'
-            sgaligner_dict = torch.load(cfg.sgaligner.pretrained, map_location=torch.device('cpu'))
-            sgaligner_model = sgaligner_dict['model']
-            # remove weights of the last layer
-            sgaligner_model.pop('fusion.weight')
-            self.model.sg_encoder.load_state_dict(sgaligner_dict['model'], strict=False)
         
         # load snapshot if required
         if cfg.other.use_resume:
