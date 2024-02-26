@@ -67,6 +67,7 @@ class Scan3rGCVitGenerator():
             self.scan_ids = np.genfromtxt(osp.join(self.scans_files_dir_mode, '{}_{}scans.txt'.format(split, self.resplit)), dtype=str)
         ## images info
         self.image_paths = {}
+        self.inference_step = 50
         for scan_id in self.scan_ids:
             self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id)
         
@@ -132,45 +133,74 @@ class Scan3rGCVitGenerator():
                 img = np.flip(img, 1)
                 img_tensors_dict[frame_idx] = torch.from_numpy(img.copy()).float().to(self.device)   
                 
+        frame_idxs_list = list(img_paths.keys())
         imgs_features = {}
-        
-        if False:
-            frame_indexs = list(img_paths.keys())
-            # aggreate all images to a tensor
+
+        for infer_step_i in range(0, len(frame_idxs_list)//self.inference_step + 1):
+            start_idx = infer_step_i * self.inference_step
+            end_idx = min((infer_step_i + 1) * self.inference_step, len(frame_idxs_list))
+            frame_idxs_sublist = frame_idxs_list[start_idx:end_idx]
+
+            # aggregate tensors
+            tensor_idxs_to_frame_idxs = {}
             img_tensors_list = []
-            for index, frame_idx in enumerate(frame_indexs):
-                frame_idx2index = {frame_idx: index }
+            if len(frame_idxs_sublist) == 0:
+                continue
+            for idx, frame_idx in enumerate(frame_idxs_sublist):
                 img_tensors_list.append(img_tensors_dict[frame_idx])
-            imgs_tensor = torch.stack(img_tensors_list, dim=0)
-            imgs_tensor_cuda = imgs_tensor
+                tensor_idxs_to_frame_idxs[idx] = frame_idx
+                
+            imgs_tensor = torch.stack(img_tensors_list, dim=0).float().to(self.device)
+            # channel first
+            imgs_tensor = imgs_tensor.permute(0, 3, 1, 2)
+            
             # inference
             start_time = time.time()
-            ## channel first
-            imgs_tensor_cuda = imgs_tensor_cuda.permute(0, 3, 1, 2)
-            img_features_cuda = self.inference(imgs_tensor_cuda)
+            img_feature_cuda = self.inference(imgs_tensor)
             self.feature_generation_time += time.time() - start_time
             ## channel last
-            img_features_cuda = img_features_cuda.permute(0, 2, 3, 1)
-            img_features = img_features_cuda.cpu().numpy()
-            # split features
-            for index, frame_idx in enumerate(frame_indexs):
-                index = frame_idx2index[frame_idx]
-                img_feature = img_features[index]
-                imgs_features[frame_idx] = img_feature
-        else:
-            for frame_idx in img_paths:
-                img_tensor = img_tensors_dict[frame_idx]
-                img_tensor_cuda = img_tensor
-                # inference
-                start_time = time.time()
-                # channel first 
-                img_tensor_cuda = img_tensor_cuda.permute(2, 0, 1)
-                img_feature_cuda = self.inference(img_tensor_cuda.unsqueeze(0))
-                self.feature_generation_time += time.time() - start_time
-                ## channel last
-                img_feature_cuda = img_feature_cuda.permute(0, 2, 3, 1)
-                img_feature = img_feature_cuda[0].cpu().numpy()
-                imgs_features[frame_idx] = img_feature
+            img_feature_cuda = img_feature_cuda.permute(0, 2, 3, 1)
+            img_features_cpu = img_feature_cuda.cpu().numpy()
+            for idx, frame_idx in tensor_idxs_to_frame_idxs.items():
+                imgs_features[frame_idx] = img_features_cpu[idx]
+        
+        # if False:
+        #     frame_indexs = list(img_paths.keys())
+        #     # aggreate all images to a tensor
+        #     img_tensors_list = []
+        #     for index, frame_idx in enumerate(frame_indexs):
+        #         frame_idx2index = {frame_idx: index }
+        #         img_tensors_list.append(img_tensors_dict[frame_idx])
+        #     imgs_tensor = torch.stack(img_tensors_list, dim=0)
+        #     imgs_tensor_cuda = imgs_tensor
+        #     # inference
+        #     start_time = time.time()
+        #     ## channel first
+        #     imgs_tensor_cuda = imgs_tensor_cuda.permute(0, 3, 1, 2)
+        #     img_features_cuda = self.inference(imgs_tensor_cuda)
+        #     self.feature_generation_time += time.time() - start_time
+        #     ## channel last
+        #     img_features_cuda = img_features_cuda.permute(0, 2, 3, 1)
+        #     img_features = img_features_cuda.cpu().numpy()
+        #     # split features
+        #     for index, frame_idx in enumerate(frame_indexs):
+        #         index = frame_idx2index[frame_idx]
+        #         img_feature = img_features[index]
+        #         imgs_features[frame_idx] = img_feature
+        # else:
+        #     for frame_idx in img_paths:
+        #         img_tensor = img_tensors_dict[frame_idx]
+        #         img_tensor_cuda = img_tensor
+        #         # inference
+        #         start_time = time.time()
+        #         # channel first 
+        #         img_tensor_cuda = img_tensor_cuda.permute(2, 0, 1)
+        #         img_feature_cuda = self.inference(img_tensor_cuda.unsqueeze(0))
+        #         self.feature_generation_time += time.time() - start_time
+        #         ## channel last
+        #         img_feature_cuda = img_feature_cuda.permute(0, 2, 3, 1)
+        #         img_feature = img_feature_cuda[0].cpu().numpy()
+        #         imgs_features[frame_idx] = img_feature
         return imgs_features
     
     def generateFeatures(self):
