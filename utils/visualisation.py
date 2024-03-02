@@ -147,6 +147,8 @@ class RetrievalStatistics:
         ## filter out undefined
         patch_predict = patch_predict[gt_anno != self.undefined]
         gt_anno = gt_anno[gt_anno != self.undefined]
+        if len(patch_predict) == 0:
+            return None, None, None
         match_success_ratio = np.sum(patch_predict == gt_anno) * 1.0 / len(gt_anno)
         # patch-match-all scans
         match_success_ratio_allscans = np.sum(correct_patch_predict_allscans) * 1.0 / len(correct_patch_predict_allscans)
@@ -305,6 +307,10 @@ class RetrievalStatistics:
                 frame_record = frames_retrieval[frame_idx]
                 shannon, success, success_allscans = \
                     self.get_shannonEntropy_and_patchsucess(scan_id, frame_record)
+                # skip if no patch
+                if shannon is None or success is None or success_allscans is None:
+                    continue
+                
                 shannon_entropy_list.append(shannon)
                 success_ratio_list.append(success)
                 success_ratio_all_scans_list.append(success_allscans)
@@ -437,7 +443,7 @@ class RetrievalStatistics:
         
         # generate confusion matrix figure
         ## color map
-        colors = [(0.5, 0, 0), (0.5, 0.5, 0), (0.5, 0.5, 0), (0, 0.5, 0), (0, 0.5, 0.5), (0, 0, 0.5)] #  purple to red
+        colors = [(0.5, 0, 0), (0.5, 0.2, 0), (0.5, 0.5, 0), (0, 0.5, 0), (0, 0.2, 0.5), (0, 0, 0.5)] #  purple to red
         ## reverse
         colors = colors[::-1]
         n_bins = 100  # Increase this number for a smoother transition
@@ -448,15 +454,17 @@ class RetrievalStatistics:
             self.split, "temp" if self.temp else "static")
         fig_path = osp.join(self.out_dir, figure_name)
         
-        fig_size = (21, 21)
+        fig_size = (23, 23)
+        label_font_size = 28
+        cate_name_font_size = 22
         plt.figure(figsize=fig_size)
         img = plt.imshow(confusion_matrix, cmap=cmap_confusion_matrix, interpolation='nearest')  # Store the AxesImage object
         plt.xticks(range(sem_num), [sem_cat_id2name[i] for i in sem_cat_idxs]
-                   , rotation=45, fontsize=18)
+                   , rotation=45, fontsize=cate_name_font_size)
         plt.yticks(range(sem_num), [sem_cat_id2name[i] for i in sem_cat_idxs],
-                   fontsize=20)
-        plt.xlabel('Predicted Semantic Category', fontsize=24)
-        plt.ylabel('Ground Truth Semantic Category', fontsize=24)
+                   fontsize=cate_name_font_size)
+        plt.xlabel('Predicted Semantic Category', fontsize=label_font_size)
+        plt.ylabel('Ground Truth Semantic Category', fontsize=label_font_size)
         cbar_ax = plt.gcf().add_axes([0.25, 0.95, 0.5, 0.03])  # Adjust these values as needed
         plt.colorbar(img, cax=cbar_ax, orientation='horizontal')  # Set the colorbar in the new axes
         plt.savefig(fig_path)
@@ -468,11 +476,11 @@ class RetrievalStatistics:
         plt.figure(figsize=fig_size)
         img = plt.imshow(confusion_matrix_allscans, cmap=cmap_confusion_matrix, interpolation='nearest')  # Store the AxesImage object
         plt.xticks(range(sem_num), [sem_cat_id2name[i] for i in sem_cat_idxs]
-                   , rotation=45, fontsize=18)
+                   , rotation=45, fontsize=cate_name_font_size)
         plt.yticks(range(sem_num), [sem_cat_id2name[i] for i in sem_cat_idxs],
-                   fontsize=20)
-        plt.xlabel('Predicted Semantic Category', fontsize=24)
-        plt.ylabel('Ground Truth Semantic Category', fontsize=24)
+                   fontsize=cate_name_font_size)
+        plt.xlabel('Predicted Semantic Category', fontsize=label_font_size)
+        plt.ylabel('Ground Truth Semantic Category', fontsize=label_font_size)
         cbar_ax = plt.gcf().add_axes([0.25, 0.95, 0.5, 0.03])  # Adjust these values as needed
         plt.colorbar(img, cax=cbar_ax, orientation='horizontal')  # Set the colorbar in the new axes
         plt.savefig(fig_path_allscans)     
