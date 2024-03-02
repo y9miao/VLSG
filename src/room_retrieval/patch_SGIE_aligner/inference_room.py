@@ -42,7 +42,8 @@ from models.patch_SGIE_aligner import PatchSGIEAligner
 # dataset
 from datasets.loaders import get_test_dataloader, get_val_dataloader
 from datasets.scan3r_objpair_XTAE_SGI import PatchObjectPairXTAESGIDataSet
-
+# statistics
+from utils.visualisation import RetrievalStatistics
 def _to_channel_last(x):
     """
     Args:
@@ -365,7 +366,16 @@ class RoomRetrivalScore():
             
             matched_obj_idxs = (patch_features_cpu_norm @ candidates_obj_embeds[target_scan_id].T).argmax(dim=1)
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
-            matched_obj_obj_ids = obj_ids_cpu_scan[matched_obj_idxs]
+            matched_obj_ids = obj_ids_cpu_scan[matched_obj_idxs]
+            matched_obj_cates = cadidate_scans_semantic_ids[candata_scan_obj_idxs_cpu[target_scan_id]][matched_obj_idxs]
+            ## calculate matched object ids between patch and all candidate rooms 
+            matched_obj_idxs_allscans = (patch_features_cpu_norm @ obj_3D_embeddings_norm_cpu_scan.T).argmax(dim=1)
+            matched_obj_cates_allscans = cadidate_scans_semantic_ids[matched_obj_idxs_allscans]
+            ### is correct for patch and object match of all candidate rooms 
+            e1i_matrix = assoc_data_dict['e1i_matrix'].cpu().numpy()
+            is_patch_correct_allscans = \
+                np.take_along_axis(e1i_matrix, matched_obj_idxs_allscans.reshape(-1,1).cpu().numpy(), axis=1).reshape(-1)
+            
             
             if self.use_global_descriptor:
                 patch_global_descriptor_pb = patch_global_descriptor_norm[batch_i:batch_i+1]
@@ -444,9 +454,18 @@ class RoomRetrivalScore():
                     top_k_recall_temporal["R@{}_T_S".format(k)] += 1
             retrieval_time_temporal += time.time() - start_time
             
+            ## calculate matched object ids between patch and the target room
             matched_obj_idxs_temp = (patch_features_cpu_norm @ candidates_obj_embeds[target_scan_id].T).argmax(dim=1)
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
-            matched_obj_idx_temp = obj_ids_cpu_scan[matched_obj_idxs_temp]
+            matched_obj_ids_temp = obj_ids_cpu_scan[matched_obj_idxs_temp]
+            matched_obj_cates_temp = cadidate_scans_semantic_ids[candata_scan_obj_idxs_cpu[target_scan_id]][matched_obj_idxs_temp]
+            ## calculate matched object ids between patch and all candidate rooms 
+            matched_obj_idxs_allscans = (patch_features_cpu_norm @ obj_3D_embeddings_norm_cpu_scan.T).argmax(dim=1)
+            matched_obj_cates_allscans_temp = cadidate_scans_semantic_ids[matched_obj_idxs_allscans]
+            ### is correct for patch and object match of all candidate rooms 
+            e1i_matrix_temp = assoc_data_dict_temp['e1i_matrix'].cpu().numpy()
+            is_patch_correct_allscans_temp = \
+                np.take_along_axis(e1i_matrix_temp, matched_obj_idxs_allscans.reshape(-1,1).cpu().numpy(), axis=1).reshape(-1)
             
             if self.use_global_descriptor:
                 patch_global_descriptor_pb = patch_global_descriptor_norm[batch_i:batch_i+1]
@@ -461,19 +480,40 @@ class RoomRetrivalScore():
                     if target_scan_id in room_sorted_global_scores_T[:k]:
                         top_k_recall_global["R@{}_T_G".format(k)] += 1
             
+            ## gt
+            gt_obj_ids = data_dict['obj_2D_patch_anno_flatten_list'][batch_i].cpu().numpy()
+            gt_obj_cates = assoc_data_dict['gt_patch_cates']
+            gt_obj_cates_temp = assoc_data_dict_temp['gt_patch_cates']
+            
             # retrieva_record
             scan_id = data_dict['scan_ids'][batch_i]
             if scan_id not in room_retrieval_record:
-                room_retrieval_record[scan_id] = {'frames_retrieval': {}}
+                room_retrieval_record[scan_id] = {'frames_retrieval': {}, 'sem_cat_id2name': dataset.obj_nyu40_id2name}
                 room_retrieval_record[scan_id]['candidates_scan_ids'] = dataset.candidate_scans[scan_id]
                 room_retrieval_record[scan_id]['obj_ids'] = dataset.scene_graphs[scan_id]['obj_ids']
             frame_idx = data_dict['frame_idxs'][batch_i]
             frame_retrieval = {
                 'frame_idx': frame_idx,
                 'temporal_scan_id': data_dict['scan_ids_temp'][batch_i],
-                'matched_obj_obj_ids': matched_obj_obj_ids,
-                'matched_obj_idx_temp': matched_obj_idx_temp,
-                'gt_anno': data_dict['obj_2D_patch_anno_flatten_list'][batch_i],
+                # non-temp
+                ## target scan
+                'matched_obj_ids': matched_obj_ids,
+                'matched_obj_cates': matched_obj_cates,
+                ## all scans
+                'is_patch_correct_allscans': is_patch_correct_allscans,
+                'matched_obj_cates_allscans': matched_obj_cates_allscans,
+                # temp
+                ## target scan
+                'matched_obj_ids_temp': matched_obj_ids_temp,
+                'matched_obj_cates_temp': matched_obj_cates_temp,
+                ## all scans
+                'is_patch_correct_allscans_temp': is_patch_correct_allscans_temp,
+                'matched_obj_cates_allscans_temp': matched_obj_cates_allscans_temp,
+                ## gt category
+                'gt_anno': gt_obj_ids,
+                'gt_obj_cates': gt_obj_cates,
+                'gt_obj_cates_temp': gt_obj_cates_temp,
+                ## retrieval scores
                 'room_score_scans_NT': room_score_scans_NT,
                 'room_score_scans_T': room_score_scans_T,
             }
@@ -519,6 +559,12 @@ class RoomRetrivalScore():
         # write retrieval record to file
         retrieval_record_file = osp.join(self.output_dir, 'retrieval_record_val.pkl')
         common.write_pkl_data(self.val_room_retrieval_record, retrieval_record_file)
+        ## statistics analysis
+        val_retrieval_statistics = RetrievalStatistics(
+            retrieval_records_dir = self.output_dir,  
+            retrieval_records = self.val_room_retrieval_record, 
+                split= 'val')
+        val_retrieval_statistics.generateStaistics()
         
         # test 
         with torch.no_grad():
@@ -535,6 +581,12 @@ class RoomRetrivalScore():
         # write retrieval record to file
         retrieval_record_file = osp.join(self.output_dir, 'retrieval_record_test.pkl')
         common.write_pkl_data(self.test_room_retrieval_record, retrieval_record_file)
+            
+        ## statistics analysis
+        test_retrieval_statistics = RetrievalStatistics(
+            retrieval_records_dir = self.output_dir,  retrieval_records = self.test_room_retrieval_record,
+                split= 'test')
+        test_retrieval_statistics.generateStaistics()
             
 
 def parse_args(parser=None):

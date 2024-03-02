@@ -351,6 +351,10 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 obj_id = int(obj_item['id'])
                 obj_nyu_category = int(obj_item['nyu40'])
                 self.obj_3D_anno[scan_id][obj_id] = (scan_id, obj_id, obj_nyu_category)
+        
+        ## category id to name
+        self.obj_nyu40_id2name = common.idx2name(osp.join(self.scans_files_dir, 'scannet40_classes.txt'))
+
 
     def sampleCandidateScenesForEachScan(self, scan_id, num_scenes):
         candidate_scans = []
@@ -441,7 +445,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
 
         # if debug with single scan
         if self.cfg.mode == "debug_few_scan":
-            return data_items[:1]
+            return data_items[:50]
         return data_items
     
     def dataItem2DataDict(self, data_item, temporal=False):
@@ -606,16 +610,21 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         ## e1i_matrix,(num_patch, num_3D_obj), record 2D-3D patch-object pairs
         ## e2j_matrix,(num_patch, num_3D_obj), record 2D-3D patch-object unpairs
         num_objs = idx
+        gt_patch_cates = np.zeros(self.num_patch, dtype=np.uint8)
         e1i_matrix = np.zeros( (self.num_patch, num_objs), dtype=np.uint8)
         e2j_matrix = np.ones( (self.num_patch, num_objs), dtype=np.uint8)
         for patch_h_i in range(self.patch_h):
             patch_h_shift = patch_h_i*self.patch_w
             for patch_w_j in range(self.patch_w):
-                obj_id = gt_2D_anno_flat[patch_h_shift + patch_w_j]
+                patch_idx = patch_h_shift + patch_w_j
+                obj_id = gt_2D_anno_flat[patch_idx]
                 if obj_id != self.undefined and (obj_id in obj_3D_id2idx_cur_scan):
                     obj_idx = obj_3D_id2idx_cur_scan[obj_id]
                     e1i_matrix[patch_h_shift+patch_w_j, obj_idx] = 1 # mark 2D-3D patch-object pairs
                     e2j_matrix[patch_h_shift+patch_w_j, obj_idx] = 0 # mark 2D-3D patch-object unpairs
+                    gt_patch_cates[patch_idx] = self.obj_3D_anno[scan_id][obj_id][2]
+                else:
+                    gt_patch_cates[patch_idx] = self.undefined
         ## e1j_matrix, (num_patch, num_patch), mark unpaired patch-patch pair for image patches
         e1j_matrix = np.zeros( (self.num_patch, self.num_patch), dtype=np.uint8)
         for patch_h_i in range(self.patch_h):
@@ -641,6 +650,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             'e1j_matrix': torch.from_numpy(e1j_matrix).float(),
             'e2j_matrix': torch.from_numpy(e2j_matrix).float(),
             'f1j_matrix': torch.from_numpy(f1j_matrix).float(),
+            'gt_patch_cates': gt_patch_cates,
             'scans_sg_obj_idxs': scans_sg_obj_idxs,
             'cadidate_scans_semantic_ids': cadidate_scans_semantic_ids,
             'candata_scan_obj_idxs': candata_scan_obj_idxs,

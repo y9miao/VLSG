@@ -6,6 +6,7 @@ import os.path as osp
 from re import T
 import time
 from tracemalloc import start
+from turtle import end_fill
 import comm
 from matplotlib import patches
 import numpy as np 
@@ -42,6 +43,8 @@ from models.patch_scene_graph_match import PatchSceneGraphAligner
 # dataset
 from datasets.loaders import get_test_dataloader, get_val_dataloader
 from datasets.scan3r_scene_graph import SceneGraphPairDataset
+# statistics
+from utils.visualisation import RetrievalStatistics
 
 def _to_channel_last(x):
     """
@@ -203,12 +206,20 @@ class RoomRetrivalScore():
                 patch_features = patch_features.flatten(1, 2) # (B, P_H*P_W, C*)
             patch_features_batch = patch_features if patch_features_batch is None \
                 else torch.cat([patch_features_batch, patch_features], dim=0)
+                
+
         
         # object features
+        start_time = time.time()
         obj_3D_embeddings = self.model.forward_scene_graph(data_dict)  # (O, C*)
         obj_3D_embeddings = self.model.sg_node_dim_match(obj_3D_embeddings) # (O, C*)
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
-        return patch_features_batch, obj_3D_embeddings_norm, forward_time
+        scenegraph_emb_time = time.time() - start_time
+        num_objs = obj_3D_embeddings.shape[0]
+        num_scenes = len(data_dict['scene_graphs']['scene_ids']) 
+        
+        return patch_features_batch, obj_3D_embeddings_norm, forward_time, \
+            scenegraph_emb_time, num_objs, num_scenes
     
     def model_forward_with_GlobalDescriptor(self, data_dict):
         # assert self.cfg.data.img_encoding.use_feature != True, \
@@ -217,6 +228,7 @@ class RoomRetrivalScore():
         # image features, image by image for fair time comparison
         batch_size = data_dict['batch_size']
         forward_time = 0.
+
         patch_features_batch = None
         for i in range(batch_size):
             with torch.no_grad():
@@ -237,9 +249,11 @@ class RoomRetrivalScore():
                 else torch.cat([patch_features_batch, patch_features], dim=0)
         
         # object features
+        start_time = time.time()
         obj_3D_embeddings = self.model.forward_scene_graph(data_dict)  # (O, C*)
         obj_3D_embeddings = self.model.sg_node_dim_match(obj_3D_embeddings) # (O, C*)
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
+
         
         # global descriptor
         patch_global_descriptor, obj_global_descriptors = None, None
@@ -275,7 +289,8 @@ class RoomRetrivalScore():
                 self.model_forward_with_GlobalDescriptor(data_dict)
             patch_global_descriptor_norm = F.normalize(patch_global_descriptor, dim=1)
         else:
-            patch_features_batch, obj_3D_embeddings_norm, forward_time = \
+            patch_features_batch, obj_3D_embeddings_norm, forward_time, \
+                scenegraph_emb_time, num_objs, num_scenes = \
                     self.model_forward(data_dict)
         for batch_i in range(batch_size):
             patch_features = patch_features_batch[batch_i]
@@ -284,7 +299,7 @@ class RoomRetrivalScore():
             assoc_data_dict = data_dict['assoc_data_dict'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict['candata_scan_obj_idxs']
-            cadidate_scans_semantic_ids = None
+            cadidate_scans_semantic_ids = assoc_data_dict['cadidate_scans_semantic_ids']
             if self.use_tf_idf:
                 # reweight_matrix_scans = assoc_data_dict['reweight_matrix_scans']
                 # reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
@@ -347,10 +362,18 @@ class RoomRetrivalScore():
                 if target_scan_id in room_sorted_by_scores_NT[:k]:
                     top_k_recall_non_temporal["R@{}_NT_S".format(k)] += 1
             retrieval_time_non_temporal += time.time() - start_time
-            
+            ## calculate matched object ids between patch and the target room
             matched_obj_idxs = (patch_features_cpu_norm @ candidates_obj_embeds[target_scan_id].T).argmax(dim=1)
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
-            matched_obj_obj_ids = obj_ids_cpu_scan[matched_obj_idxs]
+            matched_obj_ids = obj_ids_cpu_scan[matched_obj_idxs]
+            matched_obj_cates = cadidate_scans_semantic_ids[candata_scan_obj_idxs_cpu[target_scan_id]][matched_obj_idxs]
+            ## calculate matched object ids between patch and all candidate rooms 
+            matched_obj_idxs_allscans = (patch_features_cpu_norm @ obj_3D_embeddings_norm_cpu_scan.T).argmax(dim=1)
+            matched_obj_cates_allscans = cadidate_scans_semantic_ids[matched_obj_idxs_allscans]
+            ### is correct for patch and object match of all candidate rooms 
+            e1i_matrix = assoc_data_dict['e1i_matrix'].cpu().numpy()
+            is_patch_correct_allscans = \
+                np.take_along_axis(e1i_matrix, matched_obj_idxs_allscans.reshape(-1,1).cpu().numpy(), axis=1).reshape(-1)
             
             if self.use_global_descriptor:
                 patch_global_descriptor_pb = patch_global_descriptor_norm[batch_i:batch_i+1]
@@ -370,7 +393,7 @@ class RoomRetrivalScore():
             assoc_data_dict_temp = data_dict['assoc_data_dict_temp'][batch_i]
             candidates_obj_sg_idxs = assoc_data_dict_temp['scans_sg_obj_idxs']
             candata_scan_obj_idxs = assoc_data_dict_temp['candata_scan_obj_idxs']
-            cadidate_scans_semantic_ids = None
+            cadidate_scans_semantic_ids = assoc_data_dict_temp['cadidate_scans_semantic_ids']
             if self.use_tf_idf:
                 # reweight_matrix_scans = assoc_data_dict_temp['reweight_matrix_scans']
                 # reweight_matrix_scans = torch_util.release_cuda_torch(reweight_matrix_scans)
@@ -429,9 +452,18 @@ class RoomRetrivalScore():
                     top_k_recall_temporal["R@{}_T_S".format(k)] += 1
             retrieval_time_temporal += time.time() - start_time
             
+            ## calculate matched object ids between patch and the target room
             matched_obj_idxs_temp = (patch_features_cpu_norm @ candidates_obj_embeds[target_scan_id].T).argmax(dim=1)
             obj_ids_cpu_scan = obj_ids_cpu[candidates_obj_sg_idxs.cpu()][candata_scan_obj_idxs_cpu[target_scan_id]]
-            matched_obj_idx_temp = obj_ids_cpu_scan[matched_obj_idxs_temp]
+            matched_obj_ids_temp = obj_ids_cpu_scan[matched_obj_idxs_temp]
+            matched_obj_cates_temp = cadidate_scans_semantic_ids[candata_scan_obj_idxs_cpu[target_scan_id]][matched_obj_idxs_temp]
+            ## calculate matched object ids between patch and all candidate rooms 
+            matched_obj_idxs_allscans = (patch_features_cpu_norm @ obj_3D_embeddings_norm_cpu_scan.T).argmax(dim=1)
+            matched_obj_cates_allscans_temp = cadidate_scans_semantic_ids[matched_obj_idxs_allscans]
+            ### is correct for patch and object match of all candidate rooms 
+            e1i_matrix_temp = assoc_data_dict_temp['e1i_matrix'].cpu().numpy()
+            is_patch_correct_allscans_temp = \
+                np.take_along_axis(e1i_matrix_temp, matched_obj_idxs_allscans.reshape(-1,1).cpu().numpy(), axis=1).reshape(-1)
             
             if self.use_global_descriptor:
                 patch_global_descriptor_pb = patch_global_descriptor_norm[batch_i:batch_i+1]
@@ -446,19 +478,40 @@ class RoomRetrivalScore():
                     if target_scan_id in room_sorted_global_scores_T[:k]:
                         top_k_recall_global["R@{}_T_G".format(k)] += 1
             
+            ## gt
+            gt_obj_ids = data_dict['obj_2D_patch_anno_flatten_list'][batch_i].cpu().numpy()
+            gt_obj_cates = assoc_data_dict['gt_patch_cates']
+            gt_obj_cates_temp = assoc_data_dict_temp['gt_patch_cates']
+            
             # retrieva_record
             scan_id = data_dict['scan_ids'][batch_i]
             if scan_id not in room_retrieval_record:
-                room_retrieval_record[scan_id] = {'frames_retrieval': {}}
+                room_retrieval_record[scan_id] = {'frames_retrieval': {}, 'sem_cat_id2name': dataset.obj_nyu40_id2name}
                 room_retrieval_record[scan_id]['candidates_scan_ids'] = dataset.candidate_scans[scan_id]
                 room_retrieval_record[scan_id]['obj_ids'] = dataset.scene_graphs[scan_id]['obj_ids']
             frame_idx = data_dict['frame_idxs'][batch_i]
             frame_retrieval = {
                 'frame_idx': frame_idx,
                 'temporal_scan_id': data_dict['scan_ids_temp'][batch_i],
-                'matched_obj_obj_ids': matched_obj_obj_ids,
-                'matched_obj_idx_temp': matched_obj_idx_temp,
-                'gt_anno': data_dict['obj_2D_patch_anno_flatten_list'][batch_i],
+                # non-temp
+                ## target scan
+                'matched_obj_ids': matched_obj_ids,
+                'matched_obj_cates': matched_obj_cates,
+                ## all scans
+                'is_patch_correct_allscans': is_patch_correct_allscans,
+                'matched_obj_cates_allscans': matched_obj_cates_allscans,
+                # temp
+                ## target scan
+                'matched_obj_ids_temp': matched_obj_ids_temp,
+                'matched_obj_cates_temp': matched_obj_cates_temp,
+                ## all scans
+                'is_patch_correct_allscans_temp': is_patch_correct_allscans_temp,
+                'matched_obj_cates_allscans_temp': matched_obj_cates_allscans_temp,
+                ## gt category
+                'gt_anno': gt_obj_ids,
+                'gt_obj_cates': gt_obj_cates,
+                'gt_obj_cates_temp': gt_obj_cates_temp,
+                ## retrieval scores
                 'room_score_scans_NT': room_score_scans_NT,
                 'room_score_scans_T': room_score_scans_T,
             }
@@ -479,6 +532,8 @@ class RoomRetrivalScore():
             'img_forward_time': img_forward_time,
             'time_T_S': retrieval_time_temporal,
             'time_NT_S': retrieval_time_non_temporal,
+            'scenegraph_emb_time_per_scene': scenegraph_emb_time / (1.0*num_scenes),
+            'scenegraph_emb_time_per_obj': scenegraph_emb_time / (1.0*num_objs),
         }
         result.update(top_k_recall_temporal)
         result.update(top_k_recall_non_temporal)
@@ -505,6 +560,13 @@ class RoomRetrivalScore():
         retrieval_record_file = osp.join(self.output_dir, 'retrieval_record_val.pkl')
         common.write_pkl_data(self.val_room_retrieval_record, retrieval_record_file)
         
+        ## statistics analysis
+        val_retrieval_statistics = RetrievalStatistics(
+            retrieval_records_dir = self.output_dir,  
+            retrieval_records = self.val_room_retrieval_record, 
+                split= 'val')
+        val_retrieval_statistics.generateStaistics()
+        
         # test 
         with torch.no_grad():
             data_dicts = tqdm.tqdm(enumerate(self.test_data_loader), total=len(self.test_data_loader))
@@ -520,6 +582,12 @@ class RoomRetrivalScore():
         # write retrieval record to file
         retrieval_record_file = osp.join(self.output_dir, 'retrieval_record_test.pkl')
         common.write_pkl_data(self.test_room_retrieval_record, retrieval_record_file)
+        
+        ## statistics analysis
+        test_retrieval_statistics = RetrievalStatistics(
+            retrieval_records_dir = self.output_dir,  retrieval_records = self.test_room_retrieval_record,
+                split= 'test')
+        test_retrieval_statistics.generateStaistics()
             
 
 def parse_args(parser=None):

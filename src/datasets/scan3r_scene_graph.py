@@ -350,6 +350,8 @@ class SceneGraphPairDataset(data.Dataset):
                 obj_id = int(obj_item['id'])
                 obj_nyu_category = int(obj_item['nyu40'])
                 self.obj_3D_anno[scan_id][obj_id] = (scan_id, obj_id, obj_nyu_category)
+        ## category id to name
+        self.obj_nyu40_id2name = common.idx2name(osp.join(self.scans_files_dir, 'scannet40_classes.txt'))
 
     
     # def sampleCandidateScenesForScans(self, scan_ids, num_scenes):
@@ -431,7 +433,7 @@ class SceneGraphPairDataset(data.Dataset):
 
         # if debug with single scan
         if self.cfg.mode == "debug_few_scan":
-            return data_items[:1]
+            return data_items[:100]
         return data_items
     
     def dataItem2DataDict(self, data_item, temporal=False):
@@ -526,6 +528,7 @@ class SceneGraphPairDataset(data.Dataset):
         obj_3D_id2idx_cur_scan = {} # for objs in current scene
         scans_sg_obj_idxs = [] # for current scene and other scenes
         candata_scan_obj_idxs = {}
+        cadidate_scans_semantic_ids = []
         ## cur scan objs
         objs_ids_cur_scan = self.scene_graphs[scan_id]['obj_ids']
         idx = 0
@@ -533,6 +536,7 @@ class SceneGraphPairDataset(data.Dataset):
             obj_3D_idx2info[idx] = self.obj_3D_anno[scan_id][obj_id]
             obj_3D_id2idx_cur_scan[obj_id] = idx
             scans_sg_obj_idxs.append(sg_obj_idxs[scan_id][obj_id])
+            cadidate_scans_semantic_ids.append(self.obj_3D_anno[scan_id][obj_id][2])
             if scan_id not in candata_scan_obj_idxs:
                 candata_scan_obj_idxs[scan_id] = []
             candata_scan_obj_idxs[scan_id].append(idx)
@@ -544,6 +548,8 @@ class SceneGraphPairDataset(data.Dataset):
             for obj_id in objs_ids_cand_scan:
                 obj_3D_idx2info[idx] = self.obj_3D_anno[cand_scan_id][obj_id]
                 scans_sg_obj_idxs.append(sg_obj_idxs[cand_scan_id][obj_id])
+                cadidate_scans_semantic_ids.append(
+                    self.obj_3D_anno[cand_scan_id][obj_id][2])
                 if cand_scan_id not in candata_scan_obj_idxs:
                     candata_scan_obj_idxs[cand_scan_id] = []
                 candata_scan_obj_idxs[cand_scan_id].append(idx)
@@ -553,24 +559,33 @@ class SceneGraphPairDataset(data.Dataset):
         candata_scan_obj_idxs[scan_id] = torch.Tensor(candata_scan_obj_idxs[scan_id]).long()
         ## to numpy
         scans_sg_obj_idxs = np.array(scans_sg_obj_idxs, dtype=np.int32)
+        cadidate_scans_semantic_ids = np.array(cadidate_scans_semantic_ids, dtype=np.int32)
         ## to torch
         scans_sg_obj_idxs = torch.from_numpy(scans_sg_obj_idxs).long()
+        cadidate_scans_semantic_ids = torch.from_numpy(cadidate_scans_semantic_ids).long()
+
                 
         ## generate obj patch association
         ## From 2D to 3D, denote as e1i_matrix, e1j_matrix, e2j_matrix      
         ## e1i_matrix,(num_patch, num_3D_obj), record 2D-3D patch-object pairs
         ## e2j_matrix,(num_patch, num_3D_obj), record 2D-3D patch-object unpairs
         num_objs = idx
+        gt_patch_cates = np.zeros(self.num_patch, dtype=np.uint8)
         e1i_matrix = np.zeros( (self.num_patch, num_objs), dtype=np.uint8)
         e2j_matrix = np.ones( (self.num_patch, num_objs), dtype=np.uint8)
         for patch_h_i in range(self.patch_h):
             patch_h_shift = patch_h_i*self.patch_w
             for patch_w_j in range(self.patch_w):
-                obj_id = gt_2D_anno_flat[patch_h_shift + patch_w_j]
+                patch_idx = patch_h_shift + patch_w_j
+                obj_id = gt_2D_anno_flat[patch_idx]
                 if obj_id != self.undefined and (obj_id in obj_3D_id2idx_cur_scan):
                     obj_idx = obj_3D_id2idx_cur_scan[obj_id]
                     e1i_matrix[patch_h_shift+patch_w_j, obj_idx] = 1 # mark 2D-3D patch-object pairs
                     e2j_matrix[patch_h_shift+patch_w_j, obj_idx] = 0 # mark 2D-3D patch-object unpairs
+
+                    gt_patch_cates[patch_idx] = self.obj_3D_anno[scan_id][obj_id][2]
+                else:
+                    gt_patch_cates[patch_idx] = self.undefined
         ## e1j_matrix, (num_patch, num_patch), mark unpaired patch-patch pair for image patches
         e1j_matrix = np.zeros( (self.num_patch, self.num_patch), dtype=np.uint8)
         for patch_h_i in range(self.patch_h):
@@ -596,7 +611,9 @@ class SceneGraphPairDataset(data.Dataset):
             'e1j_matrix': torch.from_numpy(e1j_matrix).float(),
             'e2j_matrix': torch.from_numpy(e2j_matrix).float(),
             'f1j_matrix': torch.from_numpy(f1j_matrix).float(),
+            'gt_patch_cates': gt_patch_cates,
             'scans_sg_obj_idxs': scans_sg_obj_idxs,
+            'cadidate_scans_semantic_ids': cadidate_scans_semantic_ids,
             'candata_scan_obj_idxs': candata_scan_obj_idxs
         }
         return assoc_data_dict

@@ -183,7 +183,7 @@ class ObjVisualEmbGen(data.Dataset):
         ])
                 
     def generateObjVisualEmb(self):
-        for scan_id in tqdm.tqdm(self.scan_ids[600:]):
+        for scan_id in tqdm.tqdm(self.scan_ids[:600]):
             obj_patch_info = self.generateObjVisualEmbScan(scan_id)
             obj_visual_emb_file = osp.join(self.obj_visual_emb_dir, "{}.pkl".format(scan_id))
             common.write_pkl_data(obj_patch_info, obj_visual_emb_file)

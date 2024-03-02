@@ -32,50 +32,49 @@ data :
     num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
   scene_graph:
-    obj_img_patch: "Features3D/obj_dinov2_top10_l3"
-    obj_topk: 10
-    obj_patch_num: 100
+    obj_img_patch: "Features3D/obj_dinov2_top5_l3"
+    obj_patch_num: 60
 
-# 3D scene graph encoder
-sg_encoder:
-  seed: 42
-  model_name    : 'sg_encoder'
-  model :
-    modules       : ['point', 'attr', 'rel', 'gat', 'img_patch']
-    scene_graph_in_dims : [3, 164, 41, 3, 1536]
-    scene_graph_encode_depth: [[128], [128], [128], [128], [256]]
-    scene_graph_emb_dims: [100, 100, 100, 100, 256]
-    gat_hidden_units: [128, 128]
-    gat_heads: [2, 2]
-    scene_graph_node_dim: 656
-    node_out_dim: 400
-    img_patch_feat_dim  : 1536
-
-    rel_dim             : 41
-    attr_dim            : 164
-    alignment_thresh    : 0.4
-
-  train :
-    pc_res: 512
-  val :
-    pc_res: 512
-    overlap_low         : 0.0
-    overlap_high        : 0.0
-    data_mode: orig
+# for sgaligner
+sgaligner:
+  use_pretrained : False
+  pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
 
   label_file_name : labels.instances.annotated.v2.ply
   pred_subfix     : inseg.ply
+
+  seed: 42
+  model_name    : 'sgaligner'
+  modules       : ['point', 'attr', 'gat', 'rel']
+  # modules       : ['point', 'gat', 'rel', 'attr']
   use_predicted : False
   registration  : False
   scan_type     : 'scan'
-  img_transformer: True
+  img_transformer: False
+
   preprocess :
     pc_resolutions      : [64, 128, 256, 512]
     subscenes_per_scene : 1
     filter_segment_size : 512
     min_obj_points      : 50
     anchor_type_name    : '' 
-    
+
+  model :
+    rel_dim             : 41
+    attr_dim            : 164
+    img_patch_feat_dim  : 1536
+    img_emb_dim: 256
+    alignment_thresh    : 0.4
+
+  train :
+    pc_res: 512
+
+  val :
+    pc_res: 512
+    overlap_low         : 0.0
+    overlap_high        : 0.0
+    data_mode: orig
+
 # our model
 model_name    : 'ObjectPatchAligner'
 
@@ -91,31 +90,32 @@ model:
     backbone_dim: 1536 # fixed
   # patch feature encoder
   patch:
-    hidden_dims: [512, 512, 512] # last is the out dim
+    hidden_dims: [512] # last is the out dim
     encoder_dim: 400
+    gcn_layers: 4  
   # 3D obj embedding encoder
   obj:
-    embedding_dim: 100 # fixed
+    embedding_dim: 400 # fixed
     embedding_hidden_dims: [512, 512]
     encoder_dim: 400
   other:
-    drop: 0.1
+    drop: 0.0
 
 # implemetation
 output_dir: "" # to be read in code from env varia
-mode: "train"
+mode: "debug_few_scan"
 # for training
 train:
   batch_size: 64
   num_workers: 16
   use_pretrained: False
-  log_steps: 20
+  log_steps: 1
   snapshot_steps: 1
   optim:
     lr: 0.0011
     scheduler: "step"
-    lr_decay: 0.95
-    lr_decay_steps: 10500
+    lr_decay: 0.96
+    lr_decay_steps: 1
     lr_min: 0.0005
     T_max: 1000
     T_mult: 1
@@ -147,17 +147,17 @@ train:
   vis_epoch_steps: 100
 # for validation
 val:
-  batch_size: 8
-  num_workers: 8
+  batch_size: 1
+  num_workers: 1
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "SGMatch_PAGRI_Top10_S1_E5_X10"
+    method_name: "Scan3r_SGA_PAGR_S1_PatchCNN_L4_SmallMlps_E7_X10"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./week13/SGMatch_PAGRI_Top10_S1/epoch-5.pth.tar" 
+  resume: "./week13/SGAligner_PAGR_S1_GCN4_SmallMlps/epoch-7.pth.tar" 
 # others
 seed: 42
 
