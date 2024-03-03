@@ -146,6 +146,7 @@ class RetrievalStatistics:
         gt_anno = frame_record['gt_anno']
         ## filter out undefined
         patch_predict = patch_predict[gt_anno != self.undefined]
+        correct_patch_predict_allscans = correct_patch_predict_allscans[gt_anno != self.undefined]
         gt_anno = gt_anno[gt_anno != self.undefined]
         if len(patch_predict) == 0:
             return None, None, None
@@ -161,7 +162,7 @@ class RetrievalStatistics:
         entropy = -sum((count/total) * np.log2(count/total) for count in counts.values())
         return entropy, match_success_ratio, match_success_ratio_allscans
     
-    def get_SceneObjNum_and_patchsucess(self, scan_id, frame_record):
+    def get_SceneObjNum_and_sucess(self, scan_id, frame_record):
         # get success
         if self.temp:
             retrieval_scores = frame_record["room_score_scans_T"]
@@ -176,6 +177,30 @@ class RetrievalStatistics:
         # get scene object number
         scene_obj_num = self.retrieval_records[scan_id]['obj_ids'].size
         return scene_obj_num, success
+
+    def get_SceneObjNum_and_patchsucess(self, scan_id, frame_record):
+        # get patch success
+        if self.temp:
+            patch_predict = frame_record["matched_obj_ids_temp"]
+            correct_patch_predict_allscans = frame_record["is_patch_correct_allscans_temp"]
+        else:
+            patch_predict = frame_record["matched_obj_ids"]
+            correct_patch_predict_allscans = frame_record["is_patch_correct_allscans"]
+        # patch-match-target scan
+        gt_anno = frame_record['gt_anno']
+        ## filter out undefined
+        patch_predict = patch_predict[gt_anno != self.undefined]
+        correct_patch_predict_allscans = correct_patch_predict_allscans[gt_anno != self.undefined]
+        gt_anno = gt_anno[gt_anno != self.undefined]
+        if len(patch_predict) == 0:
+            return None, None, None
+        match_success_ratio = np.sum(patch_predict == gt_anno) * 1.0 / len(gt_anno)
+        # patch-match-all scans
+        match_success_ratio_allscans = np.sum(correct_patch_predict_allscans) * 1.0 / len(correct_patch_predict_allscans)
+        
+        # get scene object number
+        scene_obj_num = self.retrieval_records[scan_id]['obj_ids'].size
+        return scene_obj_num, match_success_ratio, match_success_ratio_allscans
 
     def generateScoreAccuCorrelation(self, num_bins = 40, fig_size = (20, 5)):
         scan_ids =  list(self.retrieval_records.keys())
@@ -363,7 +388,7 @@ class RetrievalStatistics:
         
         return correlation_entropy_success, correlation_entropy_success_allscans, np.mean(success_arr), np.mean(success_arr_allscans)
        
-    def generateSceneObjPatchAccuCorrelation(self, num_bins = 40, fig_size = (20, 5)):
+    def generateSceneObjAccuCorrelation(self, num_bins = 40, fig_size = (20, 5)):
         scan_ids =  list(self.retrieval_records.keys())
         
         # get shannon entropy and success pairs
@@ -377,7 +402,7 @@ class RetrievalStatistics:
             # static case
             for frame_idx in frame_idxs:
                 frame_record = frames_retrieval[frame_idx]
-                scene_obj_num, success = self.get_SceneObjNum_and_patchsucess(scan_id, frame_record)
+                scene_obj_num, success = self.get_SceneObjNum_and_sucess(scan_id, frame_record)
                 scene_obj_num_list.append(scene_obj_num)
                 success_ratio_list.append(success)
         
@@ -387,6 +412,41 @@ class RetrievalStatistics:
         ## calculate correlation
         correlation = np.corrcoef(scene_obj_num_arr, success_arr)[0, 1]
         return correlation
+    
+    def generateSceneObjPatchAccuCorrelation(self, num_bins = 40, fig_size = (20, 5)):
+        scan_ids =  list(self.retrieval_records.keys())
+        
+        # get scene obj num and success pairs
+        success_ratio_list = []
+        success_ratio_all_scans_list = []
+        scene_obj_num_list = []
+        for scan_id in scan_ids:
+            record = self.retrieval_records[scan_id]
+            frames_retrieval = record["frames_retrieval"]
+            frame_idxs = list(frames_retrieval.keys())
+            
+            for frame_idx in frame_idxs:
+                frame_record = frames_retrieval[frame_idx]
+                scene_obj_num, success, success_allscans = \
+                    self.get_SceneObjNum_and_patchsucess(scan_id, frame_record)
+                # skip if no patch
+                if scene_obj_num is None or success is None or success_allscans is None:
+                    continue
+                
+                scene_obj_num_list.append(scene_obj_num)
+                success_ratio_list.append(success)
+                success_ratio_all_scans_list.append(success_allscans)
+        
+        # calculate correlation
+        scene_obj_num_arr = np.array(scene_obj_num_list)
+        success_arr = np.array(success_ratio_list)
+        success_arr_allscans = np.array(success_ratio_all_scans_list)
+        ## calculate correlation
+        correlation_obj_num_success = np.corrcoef(scene_obj_num_arr, success_arr)[0, 1]
+        correlation_obj_num_success_allscans = np.corrcoef(
+            scene_obj_num_arr, success_arr_allscans)[0, 1]
+        
+        return correlation_obj_num_success, correlation_obj_num_success_allscans
        
     def generateSemanticConfusionMatrix(self, topk = 20):
         scan_ids =  list(self.retrieval_records.keys())
@@ -487,23 +547,29 @@ class RetrievalStatistics:
         return confusion_matrix
 
     def generateStaistics(self):
-        ImgObjPatchAccuCorre, ImgObjPatchAllscansAccuCorre, PatchAccu, PatchAccuAllScans = \
-            self.generateImgObjPatchAccuCorrelation()
         ScoreAccuCorre = self.generateScoreAccuCorrelation()
         ImgObjAccuCorre = self.generateImgObjAccuCorrelation()
-        SceneObjPatchAccuCorre = self.generateSceneObjPatchAccuCorrelation()
+        SceneObjAccuCorre = self.generateSceneObjAccuCorrelation()
+        
+        ImgObjPatchAccuCorre, ImgObjPatchAllscansAccuCorre, PatchAccu, PatchAccuAllScans = \
+            self.generateImgObjPatchAccuCorrelation()
+        SceneObjPatchAccuCorre, SceneObjPatchAllscansAccuCorre = self.generateSceneObjPatchAccuCorrelation()
         self.generateSemanticConfusionMatrix()
 
         # save to txt
         txt_file = osp.join(self.out_dir, "{}_retrieval_statistics.txt".format(self.split))
         with open(txt_file, "w") as f:
-            f.write("Score~AccuR1 Pearson Correlation Coeff: {}\n".format(ScoreAccuCorre))
-            f.write("ImgObjShannonInfo~AccuR1 Pearson Correlation Coeff: {}\n".format(ImgObjAccuCorre))
-            f.write("ImgObjShannonInfo~AccuPatch Pearson Correlation Coeff: {}\n".format(ImgObjPatchAccuCorre))
-            f.write("ImgObjShannonInfo~AccuPatch Pearson Correlation Coeff (all scans as candidates): {}\n".format(ImgObjPatchAllscansAccuCorre))
-            f.write("SceneObj~AccuPatch Pearson Correlation Coeff: {}\n".format(SceneObjPatchAccuCorre))
-            f.write("PatchAccu: {}\n".format(PatchAccu))
+            f.write("Score~R1 Pearson Correlation Coeff: {}\n".format(ScoreAccuCorre))
+            f.write("ImgObjShannon~R1 Pearson Correlation Coeff: {}\n".format(ImgObjAccuCorre))
+            f.write("SceneObj~R1 Pearson Correlation Coeff: {}\n".format(SceneObjAccuCorre))
+            
+            f.write("PatchR1: {}\n".format(PatchAccu))
+            f.write("ImgObjShannon~PatchR1 Pearson Correlation Coeff: {}\n".format(ImgObjPatchAccuCorre))
+            f.write("SceneObj~PatchR1 Pearson Correlation Coeff: {}\n".format(SceneObjPatchAccuCorre))
+            
             f.write("PatchAccu (all scans as candidates): {}\n".format(PatchAccuAllScans))
+            f.write("ImgObjShannon~PatchR1 Pearson Correlation Coeff (all scans as candidates): {}\n".format(ImgObjPatchAllscansAccuCorre))
+            f.write("SceneObj~PatchR1 Pearson Correlation Coeff (all scans as candidates): {}\n".format(SceneObjPatchAllscansAccuCorre))
             
     def plotBar(self, metric_title, x_label, y_label, labels, metric_values, 
                 method_names, fig_path, figsize=(12, 9), x_rotation=0, 
