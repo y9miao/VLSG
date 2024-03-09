@@ -40,6 +40,7 @@ _C.data.scene_graph = CN()
 _C.data.scene_graph.obj_img_patch = ""
 _C.data.scene_graph.obj_patch_num = 1
 _C.data.scene_graph.obj_topk = 1
+_C.data.scene_graph.use_predicted = False
 
 _C.data.auxiliary = CN()
 _C.data.auxiliary.use_patch_depth = False

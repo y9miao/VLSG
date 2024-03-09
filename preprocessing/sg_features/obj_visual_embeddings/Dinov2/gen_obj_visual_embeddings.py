@@ -8,7 +8,7 @@ import torch.utils.data as data
 from torchvision.transforms import transforms
 from PIL import Image
 import cv2
-import sys
+import sys, time
 import scipy
 import tqdm
 # models
@@ -181,9 +181,11 @@ class ObjVisualEmbGen(data.Dataset):
             tvf.Normalize(mean=[0.485, 0.456, 0.406], 
                             std=[0.229, 0.224, 0.225])
         ])
+            
+        self.time_used = 0.
                 
     def generateObjVisualEmb(self):
-        for scan_id in tqdm.tqdm(self.scan_ids[600:]):
+        for scan_id in tqdm.tqdm(self.scan_ids):
             obj_patch_info = self.generateObjVisualEmbScan(scan_id)
             obj_visual_emb_file = osp.join(self.obj_visual_emb_dir, "{}.pkl".format(scan_id))
             common.write_pkl_data(obj_patch_info, obj_visual_emb_file)
@@ -249,6 +251,7 @@ class ObjVisualEmbGen(data.Dataset):
         # get obj mask
         obj_mask = obj_2D_anno_f_rot == obj_id
         # extract multi-level crop dinov2 features
+        start = time.time()
         images_crops = []
         for level in range(num_of_levels):
             mask_tensor = torch.from_numpy(obj_mask).float()
@@ -266,6 +269,7 @@ class ObjVisualEmbGen(data.Dataset):
                 cls_token = ret[:, 0, :]
                 # get mean of all patches
                 mean_patch = cls_token.mean(dim=0)
+        self.time_used += time.time() - start
         return mean_patch.cpu().detach().numpy()
         
     def __len__(self):
@@ -274,10 +278,15 @@ class ObjVisualEmbGen(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
+    split = 'val'
     os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/Dinov2/obj_visual_embeddings.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_ds = ObjVisualEmbGen(cfg, split='train', vis = False)
+    scan3r_ds = ObjVisualEmbGen(cfg, split=split, vis = False)
     scan3r_ds.generateObjVisualEmb()
-    # obj_patch_info = scan3r_ds.generateObjVisualEmbScan("6a36053b-fa53-2915-9716-6b5361c7791a")
+
+    print("Time used: ", scan3r_ds.time_used)
+    with open("./time_used_{}.txt".format(split), "w") as f:
+        f.write("Time used: {:.3f}s".format(scan3r_ds.time_used))
+    
     breakpoint=None

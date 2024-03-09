@@ -221,10 +221,15 @@ class RoomRetrivalScore():
                 else torch.cat([patch_features_batch, patch_features], dim=0)
         
         # object features
+        start_time = time.time()
         obj_3D_embeddings = self.model.forward_scene_graph(data_dict)  # (O, C*)
         obj_3D_embeddings = self.model.obj_embedding_encoder(obj_3D_embeddings) # (O, C*)
         obj_3D_embeddings_norm = F.normalize(obj_3D_embeddings, dim=-1)
-        return patch_features_batch, obj_3D_embeddings_norm, forward_time
+        scenegraph_emb_time = time.time() - start_time
+        num_objs = obj_3D_embeddings.shape[0]
+        num_scenes = len(data_dict['scene_graphs']['scene_ids']) 
+        return patch_features_batch, obj_3D_embeddings_norm, forward_time, \
+            scenegraph_emb_time, num_objs, num_scenes
     
     def model_forward_with_GlobalDescriptor(self, data_dict):
         # assert self.cfg.data.img_encoding.use_feature != True, \
@@ -291,7 +296,8 @@ class RoomRetrivalScore():
                 self.model_forward_with_GlobalDescriptor(data_dict)
             patch_global_descriptor_norm = F.normalize(patch_global_descriptor, dim=1)
         else:
-            patch_features_batch, obj_3D_embeddings_norm, forward_time = \
+            patch_features_batch, obj_3D_embeddings_norm, forward_time, \
+                scenegraph_emb_time, num_objs, num_scenes = \
                     self.model_forward(data_dict)
         for batch_i in range(batch_size):
             patch_features = patch_features_batch[batch_i]
@@ -534,6 +540,8 @@ class RoomRetrivalScore():
             'img_forward_time': img_forward_time,
             'time_T_S': retrieval_time_temporal,
             'time_NT_S': retrieval_time_non_temporal,
+            'scenegraph_emb_time_per_scene': scenegraph_emb_time / (1.0*num_scenes),
+            'scenegraph_emb_time_per_obj': scenegraph_emb_time / (1.0*num_objs),
         }
         result.update(top_k_recall_temporal)
         result.update(top_k_recall_non_temporal)

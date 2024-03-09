@@ -138,6 +138,8 @@ class RoomRetrivalScore():
         top_k_recall_non_temporal = {"R@{}_NT_S".format(k): 0. for k in top_k_list}
         retrieval_time_temporal = 0.
         retrieval_time_non_temporal = 0.
+        embed3d_time = 0.
+        num_scene = 0
         
         for batch_i in range(batch_size):
             img_feature = data_dict['img_features'][batch_i].unsqueeze(0)
@@ -149,15 +151,21 @@ class RoomRetrivalScore():
             ## get cur scan embeddings
             # curr_scan_pcs = data_dict['curr_scan_pcs_list'][batch_i]
             curr_scan_pcs = torch_util.to_cuda(scan_pcs[cur_scan_id])
+            start_time = time.time()
             pcs = [curr_scan_pcs.contiguous()]
             scans_pcs_embeddings[cur_scan_id], _ = self.model_forward(pcs)
+            embed3d_time += time.time() - start_time
+            num_scene += 1
             ## get candidate scan embeddings
             # candidate_scans_pcs = data_dict['candidate_scan_pcs_list'][batch_i]
             candidate_scans = data_dict['candidate_scan_ids_list'][batch_i]
             candidate_scans_pcs = {scan_id: torch_util.to_cuda(scan_pcs[scan_id]) for scan_id in candidate_scans}
+            start_time = time.time()
             for candidate_scan_id, scans_pcs in candidate_scans_pcs.items():
                 pcs = [scans_pcs.contiguous()]
                 scans_pcs_embeddings[candidate_scan_id], _ = self.model_forward(pcs)
+            embed3d_time += time.time() - start_time
+            num_scene += len(candidate_scans)
             ## calculate similarity in cpu
             img_feature_cpu = img_feature.cpu()
             scans_pcs_embeddings_cpu = torch_util.release_cuda_torch(scans_pcs_embeddings)
@@ -210,6 +218,7 @@ class RoomRetrivalScore():
         result = {
             'time_T_S': retrieval_time_temporal,
             'time_NT_S': retrieval_time_non_temporal,
+            'scenegraph_emb_time_per_scene': embed3d_time / num_scene,
         }
         result.update(top_k_recall_temporal)
         result.update(top_k_recall_non_temporal)

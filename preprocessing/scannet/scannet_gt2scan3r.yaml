@@ -1,0 +1,9 @@
+seed: 42
+
+data:
+  root_dir: "/home/yang/990Pro/scannet_seqs/data"
+
+preprocess :
+  pc_resolutions      : [64, 128, 256, 512]
+  filter_segment_size : 512
+  min_obj_points      : 50

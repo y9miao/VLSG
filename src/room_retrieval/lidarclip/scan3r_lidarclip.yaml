@@ -17,7 +17,7 @@ data :
     max_depth: 8.0
   cross_scene:
     use_cross_scene: True
-    num_scenes: 49 # number of scenes 
+    num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
 
 # for sgaligner
@@ -103,12 +103,12 @@ train:
   vis_epoch_steps: 100
 # for validation
 val:
-  batch_size: 2
-  num_workers: 2
+  batch_size: 16
+  num_workers: 16
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "LidarClipE8_scan3r_X50"
+    method_name: "LidarClipE8_scan3r_X10"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR

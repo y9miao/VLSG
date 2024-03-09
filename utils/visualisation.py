@@ -114,24 +114,43 @@ class RetrievalStatistics:
         score = retrieval_scores[room_sorted_by_scores[0]]
         return score, success
     
+    def get_shannonEntropy(self, scan_id, frame_record):
+        # get success
+        if self.temp:
+            gt_obj_cates = frame_record['gt_obj_cates_temp']
+        else:
+            gt_obj_cates = frame_record['gt_obj_cates']
+        
+        # get Shannon Entropy
+        patch_obj_ids = frame_record['gt_anno']
+        patch_obj_ids = patch_obj_ids[patch_obj_ids != self.undefined]
+        gt_obj_cates = gt_obj_cates[patch_obj_ids != self.undefined]
+        ## merge instances of cateogory
+        wall_cate_id = 1
+        wall_obj_ids = patch_obj_ids[ gt_obj_cates == wall_cate_id ]
+        if len(wall_obj_ids) > 0:
+            patch_obj_ids[ gt_obj_cates == wall_cate_id ] = wall_obj_ids[0]
+        counts = Counter(patch_obj_ids)
+        total = sum(counts.values())
+        entropy = -sum((count/total) * np.log2(count/total) for count in counts.values())
+        return entropy
+    
     def get_shannonEntropy_and_sucess(self, scan_id, frame_record):
         # get success
         if self.temp:
             retrieval_scores = frame_record["room_score_scans_T"]
             target_scan_id = frame_record["temporal_scan_id"]
+            gt_obj_cates = frame_record['gt_obj_cates_temp']
         else:
             retrieval_scores = frame_record["room_score_scans_NT"]
             target_scan_id = scan_id
+            gt_obj_cates = frame_record['gt_obj_cates']
         room_sorted_by_scores = [item[0] for item in sorted(
             retrieval_scores.items(), key=lambda x: x[1], reverse=True)]
         success = target_scan_id == room_sorted_by_scores[0]
         
         # get Shannon Entropy
-        patch_obj_ids = frame_record['gt_anno']
-        patch_obj_ids = patch_obj_ids[patch_obj_ids != self.undefined]
-        counts = Counter(patch_obj_ids)
-        total = sum(counts.values())
-        entropy = -sum((count/total) * np.log2(count/total) for count in counts.values())
+        entropy = self.get_shannonEntropy(scan_id, frame_record)
         return entropy, success
 
     def get_shannonEntropy_and_patchsucess(self, scan_id, frame_record):
@@ -155,11 +174,7 @@ class RetrievalStatistics:
         match_success_ratio_allscans = np.sum(correct_patch_predict_allscans) * 1.0 / len(correct_patch_predict_allscans)
         
         # get Shannon Entropy
-        patch_obj_ids = gt_anno
-        patch_obj_ids = patch_obj_ids[patch_obj_ids != self.undefined]
-        counts = Counter(patch_obj_ids)
-        total = sum(counts.values())
-        entropy = -sum((count/total) * np.log2(count/total) for count in counts.values())
+        entropy = self.get_shannonEntropy(scan_id, frame_record)
         return entropy, match_success_ratio, match_success_ratio_allscans
     
     def get_SceneObjNum_and_sucess(self, scan_id, frame_record):

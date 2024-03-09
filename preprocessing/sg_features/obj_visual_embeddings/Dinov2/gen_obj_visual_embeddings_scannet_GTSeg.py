@@ -226,7 +226,7 @@ if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
     os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/data"
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/Dinov2/obj_visual_embeddings_scannet.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/Dinov2/obj_visual_embeddings_scannet_GTSeg.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
     scan3r_ds = ObjVisualEmbGen(cfg, split='train', vis = False)
     scan3r_ds.generateObjVisualEmb()

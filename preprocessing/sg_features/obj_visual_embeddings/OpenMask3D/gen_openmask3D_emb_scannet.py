@@ -8,7 +8,7 @@ import torch
 import torch.utils.data as data
 from torchvision.transforms import transforms
 import cv2
-import sys
+import sys, time
 import scipy
 import tqdm
 from PIL import Image
@@ -119,6 +119,9 @@ class ObjVisualEmbGen(data.Dataset):
         self.clip_model, self.clip_preprocess = clip.load(clip_model_name, jit=False)
         self.clip_model.to(torch.device('cuda'))
         self.clip_model.eval()
+        
+        # time 
+        self.run_time = 0.
                 
     def generateObjVisualEmb(self):
         for scan_id in tqdm.tqdm(self.scan_ids):
@@ -181,6 +184,7 @@ class ObjVisualEmbGen(data.Dataset):
         obj_mask =  cv2.resize(patch_mask.astype(np.uint8), (self.img_resize_w, self.img_resize_h),
                                interpolation=cv2.INTER_NEAREST)
         # extract multi-level crop clip embs
+        start_time = time.time()
         images_crops = []
         for level in range(num_of_levels):
             mask_tensor = torch.from_numpy(obj_mask).to(self.device).float()
@@ -197,6 +201,7 @@ class ObjVisualEmbGen(data.Dataset):
                 image_features = self.clip_model.encode_image(image_input.float())
                 image_features /= image_features.norm(dim=-1, keepdim=True) #normalize
                 image_features = image_features.mean(axis=0)
+        self.run_time += time.time() - start_time
         return image_features.cpu().detach().numpy()
 
         
@@ -206,10 +211,17 @@ class ObjVisualEmbGen(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
+    split = 'val'
     os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/data"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/OpenMask3D/openmask3D_emb_scannet.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_ds = ObjVisualEmbGen(cfg, split='val', vis = False)
+    scan3r_ds = ObjVisualEmbGen(cfg, split=split, vis = False)
     scan3r_ds.generateObjVisualEmb()
     # obj_patch_info = scan3r_ds.generateObjVisualEmbScan("6a36053b-fa53-2915-9716-6b5361c7791a")
     breakpoint=None
+    # print used time 
+    print("Total run time: ", scan3r_ds.run_time)
+    ## write to log file
+    log_file = "./log_{}.txt".format(split)
+    with open(log_file, 'w') as f:
+        f.write("Total run time: {}\n".format(scan3r_ds.run_time))

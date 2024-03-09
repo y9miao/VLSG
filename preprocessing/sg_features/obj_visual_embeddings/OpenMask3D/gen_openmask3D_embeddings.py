@@ -1,3 +1,4 @@
+from math import log
 import os
 import os.path as osp
 import comm
@@ -19,7 +20,7 @@ import torch.optim as optim
 ## clip
 import clip
 from clip.model import CLIP
-
+import time
 from yaml import scan
 
 workspace_dir = osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))))
@@ -83,10 +84,10 @@ class ObjVisualEmbGen(data.Dataset):
         self.scans_files_dir_mode = osp.join(self.scans_files_dir, self.mode)
 
         # 2D images
-        self.image_w = self.cfg.data.img.w
-        self.image_h = self.cfg.data.img.h
-        self.image_resize_w = self.cfg.data.img_encoding.resize_w
-        self.image_resize_h = self.cfg.data.img_encoding.resize_h
+        # self.image_w = self.cfg.data.img.w
+        # self.image_h = self.cfg.data.img.h
+        # self.image_resize_w = self.cfg.data.img_encoding.resize_w
+        # self.image_resize_h = self.cfg.data.img_encoding.resize_h
         self.img_rotate = self.cfg.data.img_encoding.img_rotate
         self.vis = vis
         
@@ -154,6 +155,9 @@ class ObjVisualEmbGen(data.Dataset):
         self.clip_model, self.clip_preprocess = clip.load(clip_model_name, jit=False)
         self.clip_model.to(torch.device('cuda'))
         self.clip_model.eval()
+        
+        # time
+        self.run_time = 0.
                 
     def generateObjVisualEmb(self):
         for scan_id in tqdm.tqdm(self.scan_ids):
@@ -217,7 +221,7 @@ class ObjVisualEmbGen(data.Dataset):
         if self.img_rotate:
             image = image.transpose(Image.ROTATE_270)
         
-            
+        start_time = time.time()
         # get obj mask
         obj_mask = obj_2D_anno_f_rot == obj_id
         # extract multi-level crop clip embs
@@ -237,6 +241,7 @@ class ObjVisualEmbGen(data.Dataset):
                 image_features = self.clip_model.encode_image(image_input.float())
                 image_features /= image_features.norm(dim=-1, keepdim=True) #normalize
                 image_features = image_features.mean(axis=0)
+        self.run_time += time.time() - start_time
         return image_features.cpu().detach().numpy()
 
         
@@ -246,10 +251,19 @@ class ObjVisualEmbGen(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/datan"
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/OpenMask3D/openmask3D_emb_scannet.yaml"
+    split = 'val'
+    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/OpenMask3D/openmask3D_embeddings.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
-    scan3r_ds = ObjVisualEmbGen(cfg, split='val', vis = True)
+    scan3r_ds = ObjVisualEmbGen(cfg, split=split, vis = False)
     scan3r_ds.generateObjVisualEmb()
+    
+    # print used time 
+    print("Total run time: ", scan3r_ds.run_time)
+    ## write to log file
+    log_file = "./log_{}.txt".format(split)
+    with open(log_file, 'w') as f:
+        f.write("Total run time: {}\n".format(scan3r_ds.run_time))
+    
     # obj_patch_info = scan3r_ds.generateObjVisualEmbScan("6a36053b-fa53-2915-9716-6b5361c7791a")
     breakpoint=None

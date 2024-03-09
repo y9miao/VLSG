@@ -1,7 +1,9 @@
 import os.path as osp
+import comm
 import numpy as np
 import json
 from glob import glob
+import ply
 from plyfile import PlyData, PlyElement
 from scipy.spatial import ConvexHull
 from copy import deepcopy
@@ -10,6 +12,30 @@ from utils import common, scan3r, point_cloud, define
 import scipy, torch
 import os, threading, queue, subprocess
 import random
+
+class platte:
+    def __init__(self) -> None:
+        self.color_map = {0: [0,0,0]}
+        
+    def getcolor(self, id):
+        if id in self.color_map:
+            return self.color_map[id]
+        else:
+            
+            while True:
+                is_new_color = True
+                r = random.randint(0,255)
+                g = random.randint(0,255)
+                b = random.randint(0,255)
+                for exist_id in self.color_map:
+                    exist_color = self.color_map[exist_id]
+                    if( r != exist_color[0] or g != exist_color[1] or b != exist_color[2]):
+                        pass
+                    else:
+                        is_new_color = False
+                if is_new_color:
+                    self.color_map[id] = [r,g,b]
+                    return [r,g,b]
 
 def isPoseValid(pose):
     is_nan = np.isnan(pose).any() or np.isinf(pose).any()
@@ -153,6 +179,125 @@ def scenegraphfusion2scan3r(scan_id, prediction_folder, edge2idx, class2idx, cfg
     data_dict = process_ply_data2scan3r(scan_id, ply_data_pred, 
                     relationship_data_dict, object_data_fict, edge2idx, cfg)
     return data_dict
+
+
+def read_segmentation(filename):
+    assert os.path.isfile(filename)
+    with open(filename) as f:
+        data = json.load(f)
+        segsIndices = np.array(data['segIndices'])
+    return segsIndices
+def read_label_mapping(filename, label_from='raw_category', label_to='nyu40id'):
+    import csv
+    assert os.path.isfile(filename)
+    def represents_int(s):
+        try: 
+            int(s)
+            return True
+        except ValueError:
+            return False
+    mapping = dict()
+    with open(filename) as csvfile:
+        reader = csv.DictReader(csvfile, delimiter='\t')
+        for row in reader:
+            mapping[row[label_from]] = int(row[label_to])
+    # if ints convert 
+    if represents_int( list(mapping.keys())[0]):
+        mapping = {int(k):v for k,v in mapping.items()}
+    return mapping
+def read_obj_info_nyu40(filename, label_map):
+    assert os.path.isfile(filename)
+    objects_info = {}
+    with open(filename) as f:
+        data = json.load(f)
+        num_objects = len(data['segGroups'])
+        for i in range(num_objects):
+            object_id = data['segGroups'][i]['objectId'] + 1 # 0 is background
+            semantic_label_raw = data['segGroups'][i]['label']
+            semantic_label_nyu40 = label_map[semantic_label_raw]
+            segs = data['segGroups'][i]['segments']
+            objects_info[object_id] = {'segs': segs, 'label': semantic_label_nyu40, 'inst_id': object_id}
+    return objects_info
+
+def scannetGtSeg2scan3r(scan_id, scene_folder, label_map, cfg):
+    import open3d as o3d
+    color_map = platte()
+    # output file
+    out_folder = osp.join(scene_folder, 'gt_scan3r')
+    common.ensure_dir(out_folder)
+    data_npy_file = osp.join(out_folder, 'data.npy')
+    ply_file = osp.join(out_folder, 'gt_scan3r.ply')
+    
+    # input file
+    segment_file = osp.join(scene_folder, '{}_vh_clean_2.0.010000.segs.json'.format(scan_id))
+    label_file = osp.join(scene_folder, '{}_vh_clean.aggregation.json'.format(scan_id))
+    mesh_file = osp.join(scene_folder, '{}_vh_clean_2.ply'.format(scan_id))
+    
+    # load data
+    segsIndices = read_segmentation(segment_file)
+    objects_info = read_obj_info_nyu40(label_file, label_map)
+    mesh = o3d.io.read_triangle_mesh(mesh_file)
+    points = np.asarray(mesh.vertices)
+    colors = np.asarray(mesh.vertex_colors)
+    assert len(points) == len(segsIndices)
+    ## object id indexs
+    filter_seg_size = cfg.preprocess.filter_segment_size
+    objects_info_filt = {}
+    obj_Ids = np.zeros(len(points), dtype=np.uint8)
+    sem_Ids = np.zeros(len(points), dtype=np.uint8)
+    for obj_id, obj_info in objects_info.items():
+        sem_id = obj_info['label']
+        segs = obj_info['segs']
+        num_points_obj = 0
+        obj_masks = []
+        for seg_id in segs:
+            seg_mask = segsIndices == seg_id
+            obj_masks.append(seg_mask)
+            num_points_seg = np.sum(seg_mask)
+            num_points_obj += num_points_seg
+        # if object is too small, ignore
+        if num_points_obj < filter_seg_size: continue
+            
+        for mask in obj_masks:
+            obj_Ids[mask] = obj_id
+            sem_Ids[mask] = sem_id
+            num_points_seg = np.sum(mask)
+            obj_color = np.array( color_map.getcolor(obj_id) ).reshape(1, 3).astype(np.float32) / 255
+            obj_colors = obj_color.repeat(num_points_seg, axis=0)
+            colors[mask] = obj_colors
+            
+        objects_info_filt[obj_id] = obj_info
+    ## filter out unlabelled points
+    valid_mask = sem_Ids != 0
+    points = points[valid_mask]
+    obj_Ids = obj_Ids[valid_mask]
+    sem_Ids = sem_Ids[valid_mask]
+    colors = colors[valid_mask]
+    # save data
+    ## save pcl to ply file
+    pointcloud_o3d = o3d.geometry.PointCloud()
+    pointcloud_o3d.points = o3d.utility.Vector3dVector(points)
+    pointcloud_o3d.colors = o3d.utility.Vector3dVector(colors)
+    ## save ply file
+    o3d.io.write_point_cloud(ply_file, pointcloud_o3d)
+
+    # create scan3r data
+    x = points[:, 0]
+    y = points[:, 1]
+    z = points[:, 2]
+    vertices = np.empty(x.shape[0], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'), ('objectId', 'h'), ('global_id', 'h')])
+    vertices['x'] = x.astype('f4')
+    vertices['y'] = y.astype('f4')
+    vertices['z'] = z.astype('f4')
+    vertices['objectId'] = obj_Ids.astype('h')
+    vertices['global_id'] = sem_Ids.astype('h')
+    ply_data_pred = vertices
+    ## save npy
+    np.save(data_npy_file, vertices)
+    
+    
+    data_dict = process_gt_seg_2scan3r(scan_id, ply_data_pred, objects_info_filt, cfg)
+    return data_dict
     
 def get_pred_obj_rel(sgfusion_pred, edge2idx, class2idx):
     idx2egde = {idx: edge for edge, idx in edge2idx.items()}
@@ -190,6 +335,7 @@ def get_pred_obj_rel(sgfusion_pred, edge2idx, class2idx):
                             'global_id' : str(obj_id)})
     
     return {'relationships' : relationships, 'objects' : objects}
+
 def filter_merge_same_part_pc(segments_pd, objects, relationships):
     instanceid2objname = {int(object_data['id']) : object_data['label'] for object_data in objects}
 
@@ -348,6 +494,57 @@ def process_ply_data2scan3r(scan_id, ply_data, rels_dict, objs_dict, rel2idx, cf
     data_dict['edges_cat'] = edges_cat
     data_dict['rel_trans'] = rel_trans
     data_dict['root_obj_id'] = root_obj_id
+    return data_dict
+
+def process_gt_seg_2scan3r(scan_id, ply_data, objects_info, cfg):
+    objects_ids = [] 
+    global_objects_ids = []
+    objects_cat = []
+    barry_centers = []
+    
+    # obj points
+    points = np.stack([ply_data['x'], ply_data['y'], ply_data['z']]).transpose((1, 0))
+    object_points = {}
+    for pc_resolution in cfg.preprocess.pc_resolutions:
+        object_points[pc_resolution] = []
+
+    for key, object in objects_info.items():
+        
+        object_id = int(object['inst_id'])
+        global_object_id = int(object['label'])
+        
+        obj_pt_idx = np.where(ply_data['objectId'] == object_id)
+        obj_pcl = points[obj_pt_idx]
+        
+        if obj_pcl.shape[0] < cfg.preprocess.min_obj_points: continue
+        hull = ConvexHull(obj_pcl)
+        cx = np.mean(hull.points[hull.vertices,0])
+        cy = np.mean(hull.points[hull.vertices,1])
+        cz = np.mean(hull.points[hull.vertices,2])
+        for pc_resolution in object_points.keys():
+            obj_pcl = point_cloud.pcl_farthest_sample(obj_pcl, pc_resolution)
+            object_points[pc_resolution].append(obj_pcl)
+        barry_centers.append([cx, cy, cz])
+        objects_ids.append(object_id)
+        global_objects_ids.append(global_object_id)
+        objects_cat.append(global_object_id)
+    for pc_resolution in object_points.keys():
+        object_points[pc_resolution] = np.array(object_points[pc_resolution])
+    
+    if len(objects_ids) < 2:
+        return -1
+    object_id2idx = {}  # convert object id to the index in the tensor
+    for index, v in enumerate(objects_ids):
+        object_id2idx[v] = index
+    
+    data_dict = {}
+    data_dict['scan_id'] = scan_id
+    data_dict['objects_id'] = np.array(objects_ids)
+    data_dict['global_objects_id'] = np.array(global_objects_ids)
+    data_dict['objects_cat'] = np.array(objects_cat)
+    data_dict['obj_points'] = object_points
+    data_dict['objects_count'] = len(objects_ids)
+    data_dict['object_id2idx'] = object_id2idx
     return data_dict
 
 def calculate_bow_node_edge_feats(data_dict_filename, rel2idx):

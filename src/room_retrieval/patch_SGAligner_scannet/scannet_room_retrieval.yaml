@@ -19,7 +19,7 @@ data:
     patch_h: 24
   cross_scene:
     use_cross_scene: True
-    num_scenes: -1 # number of scenes 
+    num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
     use_tf_idf: False
   scene_graph:
@@ -116,11 +116,11 @@ train:
       magnitude: [0.2, 0.4, 0.4]
 # for validation
 val:
-  batch_size: 1
-  num_workers: 1
+  batch_size: 16
+  num_workers: 16
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "SGA_PAGRI_E15_scannet_XAll"
+    method_name: "SGA_PAGRI_E15_scannet_X10"
 other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR

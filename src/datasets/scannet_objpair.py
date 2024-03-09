@@ -123,13 +123,17 @@ class ScannetPatchObjDataset(data.Dataset):
 
     def load3DSceneGraphs(self):
         # load scene graph
+        self.use_pred_sg = self.cfg.data.scene_graph.use_predicted
         self.pc_resolution = self.cfg.sgaligner.pc_res
+        sg_folder_name = 'scene_graph_fusion' if self.use_pred_sg else 'gt_scan3r'
+        sg_modules = self.cfg.sgaligner.modules
+        self.sg_modules = sg_modules
         ## scene graph
         self.scene_graphs = {}
         ## 3D obj info
         self.obj_3D_anno = {}
         for scan_id in self.scan_ids:
-            sg_folder_scan = osp.join(self.split_folder, scan_id, 'scene_graph_fusion')
+            sg_folder_scan = osp.join(self.split_folder, scan_id, sg_folder_name)
             # Centering
             points = scan3r.load_plydata_npy(osp.join(sg_folder_scan, 'data.npy'))
             pcl_center = np.mean(points, axis=0)
@@ -137,34 +141,37 @@ class ScannetPatchObjDataset(data.Dataset):
             scene_graph_dict = common.load_pkl_data(osp.join(sg_folder_scan, '{}.pkl'.format(scan_id)))
             object_ids = scene_graph_dict['objects_id']
             global_object_ids = scene_graph_dict['objects_cat']
-            edges = scene_graph_dict['edges']
             object_points = scene_graph_dict['obj_points'][self.pc_resolution] - pcl_center
             # load data to tensor
             object_points = torch.from_numpy(object_points).type(torch.FloatTensor)
-            edges = torch.from_numpy(edges)
-            if 'bow_vec_object_attr_feats' in scene_graph_dict:
-                bow_vec_obj_attr_feats = torch.from_numpy(scene_graph_dict['bow_vec_object_attr_feats'])
-            else:
-                attri_dim = self.cfg.sgaligner.model.attr_dim
-                bow_vec_obj_attr_feats = torch.zeros(object_points.shape[0], attri_dim)
-            if 'bow_vec_object_edge_feats' in scene_graph_dict:
-                bow_vec_obj_edge_feats = torch.from_numpy(scene_graph_dict['bow_vec_object_edge_feats'])
-            else:
-                rel_dim = self.cfg.sgaligner.model.rel_dim
-                bow_vec_obj_edge_feats = torch.zeros(edges.shape[0], rel_dim)
-            rel_pose = torch.from_numpy(scene_graph_dict['rel_trans'])
+            
             # aggreate data 
             data_dict = {} 
+            if 'rel' in sg_modules or 'gat' in sg_modules:
+                edges = scene_graph_dict['edges']
+                edges = torch.from_numpy(edges)
+                if 'bow_vec_object_edge_feats' in scene_graph_dict:
+                    bow_vec_obj_edge_feats = torch.from_numpy(scene_graph_dict['bow_vec_object_edge_feats'])
+                else:
+                    rel_dim = self.cfg.sgaligner.model.rel_dim
+                    bow_vec_obj_edge_feats = torch.zeros(edges.shape[0], rel_dim)
+                data_dict['graph_per_edge_count'] = np.array([edges.shape[0]])
+                data_dict['tot_bow_vec_object_edge_feats'] = bow_vec_obj_edge_feats
+                rel_pose = torch.from_numpy(scene_graph_dict['rel_trans'])
+                data_dict['tot_rel_pose'] = rel_pose
+                data_dict['edges'] = edges    
+            if 'attr' in sg_modules:
+                if 'bow_vec_object_attr_feats' in scene_graph_dict:
+                    bow_vec_obj_attr_feats = torch.from_numpy(scene_graph_dict['bow_vec_object_attr_feats'])
+                else:
+                    attri_dim = self.cfg.sgaligner.model.attr_dim
+                    bow_vec_obj_attr_feats = torch.zeros(object_points.shape[0], attri_dim)
+                data_dict['tot_bow_vec_object_attr_feats'] = bow_vec_obj_attr_feats
+
             data_dict['obj_ids'] = object_ids
             data_dict['tot_obj_pts'] = object_points
             data_dict['graph_per_obj_count'] = np.array([object_points.shape[0]])
-            data_dict['graph_per_edge_count'] = np.array([edges.shape[0]])
             data_dict['tot_obj_count'] = object_points.shape[0]
-            data_dict['tot_bow_vec_object_attr_feats'] = bow_vec_obj_attr_feats
-            data_dict['tot_bow_vec_object_edge_feats'] = bow_vec_obj_edge_feats
-            data_dict['tot_rel_pose'] = rel_pose
-            data_dict['edges'] = edges    
-            data_dict['global_obj_ids'] = global_object_ids
             data_dict['scene_ids'] = [scan_id]        
             data_dict['pcl_center'] = pcl_center
             # get scene graph
@@ -396,20 +403,21 @@ class ScannetPatchObjDataset(data.Dataset):
         scene_graphs_ = {}
         scans_size = len(scene_graph_infos)
         scene_graphs_['batch_size'] = scans_size
+        scene_graphs_['scene_ids'] = self.aggretateDataDicts(scene_graph_infos, 'scene_ids', 'np_stack')
         scene_graphs_['obj_ids'] = self.aggretateDataDicts(scene_graph_infos, 'obj_ids', 'np_concat')
         scene_graphs_['tot_obj_pts'] = self.aggretateDataDicts(scene_graph_infos, 'tot_obj_pts', 'torch_cat')
-        scene_graphs_['graph_per_obj_count'] = self.aggretateDataDicts(scene_graph_infos, 'graph_per_obj_count', 'np_stack')
-        scene_graphs_['graph_per_edge_count'] = self.aggretateDataDicts(scene_graph_infos, 'graph_per_edge_count', 'np_stack')
-        scene_graphs_['tot_obj_count'] = self.aggretateDataDicts(scene_graph_infos, 'tot_obj_count', 'np_stack')
-        scene_graphs_['tot_bow_vec_object_attr_feats'] = \
-            self.aggretateDataDicts(scene_graph_infos, 'tot_bow_vec_object_attr_feats', 'torch_cat').double()
-        scene_graphs_['tot_bow_vec_object_edge_feats'] = \
-            self.aggretateDataDicts(scene_graph_infos, 'tot_bow_vec_object_edge_feats', 'torch_cat').double()
-        scene_graphs_['tot_rel_pose'] = self.aggretateDataDicts(scene_graph_infos, 'tot_rel_pose', 'torch_cat').double()
-        scene_graphs_['edges'] = self.aggretateDataDicts(scene_graph_infos, 'edges', 'torch_cat')
-        scene_graphs_['global_obj_ids'] = self.aggretateDataDicts(scene_graph_infos, 'global_obj_ids', 'np_concat')
-        scene_graphs_['scene_ids'] = self.aggretateDataDicts(scene_graph_infos, 'scene_ids', 'np_stack')
         scene_graphs_['pcl_center'] = self.aggretateDataDicts(scene_graph_infos, 'pcl_center', 'np_stack')
+        scene_graphs_['graph_per_obj_count'] = self.aggretateDataDicts(scene_graph_infos, 'graph_per_obj_count', 'np_stack')
+        scene_graphs_['tot_obj_count'] = self.aggretateDataDicts(scene_graph_infos, 'tot_obj_count', 'np_stack')
+        if 'attr' in self.sgaligner_modules:
+            scene_graphs_['tot_bow_vec_object_attr_feats'] = \
+                self.aggretateDataDicts(scene_graph_infos, 'tot_bow_vec_object_attr_feats', 'torch_cat').double()
+        if 'rel' in self.sg_modules or 'gat' in self.sg_modules:
+            scene_graphs_['graph_per_edge_count'] = self.aggretateDataDicts(scene_graph_infos, 'graph_per_edge_count', 'np_stack')
+            scene_graphs_['tot_bow_vec_object_edge_feats'] = \
+                self.aggretateDataDicts(scene_graph_infos, 'tot_bow_vec_object_edge_feats', 'torch_cat').double()
+            scene_graphs_['tot_rel_pose'] = self.aggretateDataDicts(scene_graph_infos, 'tot_rel_pose', 'torch_cat').double()
+            scene_graphs_['edges'] = self.aggretateDataDicts(scene_graph_infos, 'edges', 'torch_cat')
         ### 3D pcs data augmentation by elastic distortion
         if self.use_aug and self.split == 'train':
             num_obs = scene_graphs_['tot_obj_pts'].shape[1]
@@ -456,7 +464,6 @@ class ScannetPatchObjDataset(data.Dataset):
             scene_graphs_['obj_img_patches'] = obj_img_patches
         
         data_dict['scene_graphs'] = scene_graphs_
-        
         ## obj info
         assoc_data_dict = []
         ### get sg obj idx 
@@ -502,7 +509,7 @@ if __name__ == '__main__':
     from datasets.loaders import get_val_dataloader
     from configs import config, update_config
     os.environ['Scan3R_ROOT_DIR'] = '/home/yang/990Pro/scannet_seqs/data'
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/src/room_retrieval/patch_SGAligner_scannet/scannet_room_retrieval.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week16/Test_PI_scannet_GTSeg/Test_PI_scannet_GTSeg.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
     # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, ScannetPatchObjDataset)
     val_dataset, val_dataloader = get_val_dataloader(cfg, ScannetPatchObjDataset)
@@ -510,6 +517,8 @@ if __name__ == '__main__':
     
     for iteration, data_dict in pbar:
         pass
+    
+    breakpoint = None
     
     # scan3r_ds = ScannetPatchObjDataset(cfg, split='val')
     # batch_size = 16

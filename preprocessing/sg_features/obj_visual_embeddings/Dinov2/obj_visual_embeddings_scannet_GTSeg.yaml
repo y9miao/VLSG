@@ -1,27 +1,19 @@
 seed: 42
 
 data :
-  name            : Scan3R
+  name            : Scannet
   root_dir        : '' # to be read in code from env varia  
   rescan: True
   resplit: True
   log_dir: ""
+  gt_patch: "gt_patch_anno/patch_anno_24_32_gt_seg"
   img:
-    img_step: 1
+    img_step: 50
     w: 960
     h: 540
-  img_encoding:
-    # image patch config
-    resize_w: 224 # resize image for backbone GCVit
-    resize_h: 224
-    img_rotate: True # rotate w,h for backbone GCVit
-    patch_w: 32 # number of patchs in width
-    patch_h: 18
-    reduce: 1 
-    feature_dir: "Features2D/GCVit_16_9_scan"
   obj_img:
     topk: 10
-    name: "Features3D/obj_dinov2_top10_l3"
+    name: "Features3D/obj_dinov2_top10_l3_gt_seg"
 
 model:
   name: GCVit_16_9_scan
