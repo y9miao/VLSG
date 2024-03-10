@@ -123,8 +123,8 @@ class RetrievalStatistics:
         
         # get Shannon Entropy
         patch_obj_ids = frame_record['gt_anno']
-        patch_obj_ids = patch_obj_ids[patch_obj_ids != self.undefined]
         gt_obj_cates = gt_obj_cates[patch_obj_ids != self.undefined]
+        patch_obj_ids = patch_obj_ids[patch_obj_ids != self.undefined]
         ## merge instances of cateogory
         wall_cate_id = 1
         wall_obj_ids = patch_obj_ids[ gt_obj_cates == wall_cate_id ]
