@@ -1,11 +1,12 @@
 import numpy as np
-import torch
+
 from scipy.spatial.transform import Rotation
 from typing import Optional
 from scipy.spatial import cKDTree
-import trimesh
+
 
 def load_inseg(pth_ply):
+    import trimesh
     cloud_pd = trimesh.load(pth_ply, process=False)
     points_pd = cloud_pd.vertices
     segments_pd = cloud_pd.metadata['_ply_raw']['vertex']['data']['label'].flatten()
@@ -87,6 +88,7 @@ def pcl_farthest_sample(point, npoint, return_idxs = False):
     return point
 
 def compute_pcl_overlap(source, target, threshold=1e-7):
+    import torch
     '''
     Compute overlap ratio from source point cloud to target point cloud
     '''

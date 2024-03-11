@@ -103,7 +103,7 @@ model:
 
 # implemetation
 output_dir: "" # to be read in code from env varia
-mode: "debug_few_scan"
+mode: "val"
 # for training
 train:
   batch_size: 64
@@ -147,8 +147,8 @@ train:
   vis_epoch_steps: 100
 # for validation
 val:
-  batch_size: 1
-  num_workers: 1
+  batch_size: 32
+  num_workers: 16
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8

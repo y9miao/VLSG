@@ -574,27 +574,27 @@ class RoomRetrivalScore():
                 split= 'val')
         val_retrieval_statistics.generateStaistics()
         
-        # test 
-        with torch.no_grad():
-            data_dicts = tqdm.tqdm(enumerate(self.test_data_loader), total=len(self.test_data_loader))
-            for iteration, data_dict in data_dicts:
-                data_dict = torch_util.to_cuda(data_dict)
-                result = self.room_retrieval_dict(data_dict, self.test_dataset,self.test_room_retrieval_record, True)
-                self.test_room_retrieval_summary.update_from_result_dict(result)
-                torch.cuda.empty_cache()
-        test_items = self.test_room_retrieval_summary.tostringlist()
-        # write metric to file
-        test_file = osp.join(self.output_dir, 'test_result.txt')
-        common.write_to_txt(test_file, test_items)
-        # write retrieval record to file
-        retrieval_record_file = osp.join(self.output_dir, 'retrieval_record_test.pkl')
-        common.write_pkl_data(self.test_room_retrieval_record, retrieval_record_file)
+        # # test 
+        # with torch.no_grad():
+        #     data_dicts = tqdm.tqdm(enumerate(self.test_data_loader), total=len(self.test_data_loader))
+        #     for iteration, data_dict in data_dicts:
+        #         data_dict = torch_util.to_cuda(data_dict)
+        #         result = self.room_retrieval_dict(data_dict, self.test_dataset,self.test_room_retrieval_record, True)
+        #         self.test_room_retrieval_summary.update_from_result_dict(result)
+        #         torch.cuda.empty_cache()
+        # test_items = self.test_room_retrieval_summary.tostringlist()
+        # # write metric to file
+        # test_file = osp.join(self.output_dir, 'test_result.txt')
+        # common.write_to_txt(test_file, test_items)
+        # # write retrieval record to file
+        # retrieval_record_file = osp.join(self.output_dir, 'retrieval_record_test.pkl')
+        # common.write_pkl_data(self.test_room_retrieval_record, retrieval_record_file)
             
-        ## statistics analysis
-        test_retrieval_statistics = RetrievalStatistics(
-            retrieval_records_dir = self.output_dir,  retrieval_records = self.test_room_retrieval_record,
-                split= 'test')
-        test_retrieval_statistics.generateStaistics()
+        # ## statistics analysis
+        # test_retrieval_statistics = RetrievalStatistics(
+        #     retrieval_records_dir = self.output_dir,  retrieval_records = self.test_room_retrieval_record,
+        #         split= 'test')
+        # test_retrieval_statistics.generateStaistics()
             
 
 def parse_args(parser=None):

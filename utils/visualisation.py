@@ -1,5 +1,6 @@
 from nis import cat
 import random
+from tkinter import font
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -518,7 +519,7 @@ class RetrievalStatistics:
         
         # generate confusion matrix figure
         ## color map
-        colors = [(0.5, 0, 0), (0.5, 0.2, 0), (0.5, 0.5, 0), (0, 0.5, 0), (0, 0.2, 0.5), (0, 0, 0.5)] #  purple to red
+        colors = [(1.0, 0, 0), (0.9, 0.2, 0), (0.7, 0.7, 0), (0, 1.0, 0), (0, 0.2, 0.9), (0, 0, 1.0)] #  purple to red
         ## reverse
         colors = colors[::-1]
         n_bins = 100  # Increase this number for a smoother transition
@@ -530,8 +531,8 @@ class RetrievalStatistics:
         fig_path = osp.join(self.out_dir, figure_name)
         
         fig_size = (23, 23)
-        label_font_size = 28
-        cate_name_font_size = 22
+        label_font_size = 30
+        cate_name_font_size = 30
         plt.figure(figsize=fig_size)
         img = plt.imshow(confusion_matrix, cmap=cmap_confusion_matrix, interpolation='nearest')  # Store the AxesImage object
         plt.xticks(range(sem_num), [sem_cat_id2name[i] for i in sem_cat_idxs]
@@ -540,9 +541,10 @@ class RetrievalStatistics:
                    fontsize=cate_name_font_size)
         plt.xlabel('Predicted Semantic Category', fontsize=label_font_size)
         plt.ylabel('Ground Truth Semantic Category', fontsize=label_font_size)
-        cbar_ax = plt.gcf().add_axes([0.25, 0.95, 0.5, 0.03])  # Adjust these values as needed
+        cbar_ax = plt.gcf().add_axes([0.25, 0.90, 0.5, 0.03])  # Adjust these values as needed
+        cbar_ax.tick_params(labelsize=20)
         plt.colorbar(img, cax=cbar_ax, orientation='horizontal')  # Set the colorbar in the new axes
-        plt.savefig(fig_path)
+        plt.savefig(fig_path, bbox_inches='tight')
         
         figure_name_allscans = "{}_{}_confusion_matrix_allscans.png".format(
             self.split, "temp" if self.temp else "static")
@@ -556,9 +558,10 @@ class RetrievalStatistics:
                    fontsize=cate_name_font_size)
         plt.xlabel('Predicted Semantic Category', fontsize=label_font_size)
         plt.ylabel('Ground Truth Semantic Category', fontsize=label_font_size)
-        cbar_ax = plt.gcf().add_axes([0.25, 0.95, 0.5, 0.03])  # Adjust these values as needed
+        cbar_ax = plt.gcf().add_axes([0.25, 0.90, 0.5, 0.03])  # Adjust these values as needed
+        cbar_ax.tick_params(labelsize=20)
         plt.colorbar(img, cax=cbar_ax, orientation='horizontal')  # Set the colorbar in the new axes
-        plt.savefig(fig_path_allscans)     
+        plt.savefig(fig_path_allscans, bbox_inches='tight')     
         return confusion_matrix
 
     def generateStaistics(self):
