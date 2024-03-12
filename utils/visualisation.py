@@ -519,7 +519,7 @@ class RetrievalStatistics:
         
         # generate confusion matrix figure
         ## color map
-        colors = [(1.0, 0, 0), (0.9, 0.2, 0), (0.7, 0.7, 0), (0, 1.0, 0), (0, 0.2, 0.9), (0, 0, 1.0)] #  purple to red
+        colors = [(0.8, 0, 0), (0.7, 0.3, 0), (0.7, 0.7, 0), (0, 0.8, 0), (0, 0.7, 0.7), (0, 0.3, 0.7), (0, 0, 0.8)] #  purple to red
         ## reverse
         colors = colors[::-1]
         n_bins = 100  # Increase this number for a smoother transition
