@@ -125,6 +125,15 @@ def load_frame_paths(data_dir, scan_id, skip=None):
         img_path = osp.join(img_folder, img_name)
         img_paths[frame_idx] = img_path
     return img_paths
+def load_frame_poses_paths(data_dir, scan_id, skip=None):
+    frame_idxs = load_frame_idxs(osp.join(data_dir, "scenes"), scan_id, skip)
+    img_poses_folder = osp.join(data_dir, "scenes", scan_id, 'sequence')
+    img_poses_paths = {}
+    for frame_idx in frame_idxs:
+        img_pose_name = "frame-{}.pose.txt".format(frame_idx)
+        img_path = osp.join(img_poses_folder, img_pose_name)
+        img_poses_paths[frame_idx] = img_path
+    return img_poses_paths
 
 def load_depth_paths(data_dir, scan_id, skip=None):
     frame_idxs = load_frame_idxs(osp.join(data_dir, "scenes"), scan_id, skip)
