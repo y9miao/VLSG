@@ -3,7 +3,7 @@ import numpy as np
 import json
 from glob import glob
 from plyfile import PlyData, PlyElement
-
+from scipy.spatial.transform import Rotation as R
 import pickle
 
 def get_scan_ids(dirname, split):
@@ -74,7 +74,26 @@ def load_all_poses(data_dir, scan_id, frame_idxs):
         frame_pose = load_pose(data_dir, scan_id, frame_idx)
         frame_poses.append(frame_pose)
     frame_poses = np.array(frame_poses)
+    return 
 
+def load_frame_poses(data_dir, scan_id, frame_idxs, type = 'matrix'):
+    frame_poses = {}
+    for frame_idx in frame_idxs:
+        frame_pose = load_pose(data_dir, scan_id, frame_idx)
+        frame_pose = frame_pose.reshape(4, 4)
+        if type == 'matrix':
+            frame_poses[frame_idx] = np.array(frame_pose)
+        elif type == 'quat_trans':
+            T_pose = np.array(frame_pose)
+            # transoformation matrix to quaternion+translation
+            quaternion = R.from_matrix(T_pose[:3, :3]).as_quat()
+            translation = T_pose[:3, 3]
+            ## convert quaternion with translation to 7D vector
+            frame_pose = np.concatenate([quaternion, translation])
+        else:
+            raise ValueError("Invalid type")
+                                   
+        frame_poses[frame_idx] = np.array(frame_pose)
     return frame_poses
 
 def load_frame_idxs(data_dir, scan_id, skip=None):

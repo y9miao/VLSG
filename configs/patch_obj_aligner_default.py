@@ -1,4 +1,5 @@
 
+from pyparsing import C
 from yacs.config import CfgNode as CN
 import os.path as osp
 import os
@@ -67,6 +68,11 @@ _C.model.other = CN()
 _C.model.other.drop = 0.0
 ## global descriptor
 _C.model.global_descriptor_dim = 1024
+
+# sgaligner
+_C.sgaligner = CN()
+_C.sgaligner.modules = ['point', 'gat', 'rel', 'attr']
+_C.sgaligner.use_pos_enc = False
 
 # for training
 _C.train = CN()

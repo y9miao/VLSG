@@ -154,7 +154,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             self.patch_w = self.image_patch_w
         self.step = self.cfg.data.img.img_step
         self.num_patch = self.patch_h * self.patch_w
-
+    
         # scene_img_dir
         self.scans_scenes_dir = osp.join(self.scans_dir, 'scenes')
         
@@ -205,6 +205,12 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         self.image_paths = {}
         for scan_id in self.scan_ids:
             self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id, self.step)
+        # load 2D frame poses
+        self.image_poses = {}
+        for scan_id in self.scan_ids:
+            frame_idxs = scan3r.load_frame_idxs(self.scans_scenes_dir, scan_id)
+            self.image_poses[scan_id] = scan3r.load_frame_poses(
+                self.scans_scenes_dir, scan_id, frame_idxs, type='quat_trans')
             
         # load 2D patch features if use pre-calculated feature
         self.use_2D_feature = cfg.data.img_encoding.use_feature
@@ -241,6 +247,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
         self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
         self.obj_topk = self.cfg.data.scene_graph.obj_topk
+        self.use_pos_enc = self.cfg.sgaligner.use_pos_enc
         self.obj_img_patches_scan_tops = {}
         if 'img_patch' in self.sgaligner_modules:
             for scan_id in self.all_scans_split:
@@ -741,6 +748,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
         ### img patch features 
         if 'img_patch' in self.sgaligner_modules:
             obj_img_patches = {}
+            obj_img_poses = {}
             obj_count_ = 0
             for scan_idx, scan_id in enumerate(scene_graphs_['scene_ids']):
                 scan_id = scan_id[0]
@@ -752,13 +760,18 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                 obj_top_frames = obj_img_patches_scan_tops['obj_image_votes_topK']
                 
                 obj_img_patches[scan_id] = {}
+                obj_img_poses[scan_id] = {}
                 for obj_id in obj_ids:
                     if obj_id not in obj_top_frames:
                         obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
                         obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
+                        if self.use_pos_enc:
+                            identity_pos = np.array([0, 0, 0, 1, 0, 0, 0]).reshape(1, -1)
+                            obj_img_poses[scan_id][obj_id] = torch.from_numpy(identity_pos).float()
                         continue
                     
                     obj_img_patch_embs_list = []
+                    obj_img_poses_list = []
                     obj_frames = obj_top_frames[obj_id][:self.obj_topk] if len(obj_top_frames[obj_id]) >= self.obj_topk \
                         else obj_top_frames[obj_id]
                     for frame_idx in obj_frames:
@@ -766,16 +779,26 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
                             embs_frame = obj_img_patches_scan[obj_id][frame_idx]
                             embs_frame = embs_frame.reshape(1, -1) if embs_frame.ndim == 1 else embs_frame
                             obj_img_patch_embs_list.append(embs_frame)
+                            if self.use_pos_enc:
+                                obj_img_poses_list.append(self.image_poses[scan_id][frame_idx])
                         
                     if len(obj_img_patch_embs_list) == 0:
                         obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
+                        if self.use_pos_enc:
+                            obj_img_poses_arr = np.array([0, 0, 0, 1, 0, 0, 0]).reshape(1, -1)
                     else:
                         obj_img_patch_embs = np.concatenate(obj_img_patch_embs_list, axis=0)
+                        if self.use_pos_enc:
+                            obj_img_poses_arr = np.stack(obj_img_poses_list, axis=0)
                         
                     obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
+                    if self.use_pos_enc:
+                        obj_img_poses[scan_id][obj_id] = torch.from_numpy(obj_img_poses_arr).float()
                     
                 obj_count_ += scene_graphs_['tot_obj_count'][scan_idx]
             scene_graphs_['obj_img_patches'] = obj_img_patches
+            if self.use_pos_enc:
+                scene_graphs_['obj_img_poses'] = obj_img_poses
         
         data_dict['scene_graphs'] = scene_graphs_
         
@@ -828,7 +851,7 @@ if __name__ == '__main__':
     sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
     from datasets.loaders import get_train_val_data_loader, get_val_dataloader
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/src/room_retrieval/patch_SGIE_aligner/inference_room.yaml"
+    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week16/DebugImgPosEnc/DebugImgPosEnc.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
     # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, PatchObjectPairXTAESGIDataSet)
     val_dataset, val_dataloader = get_val_dataloader(cfg, PatchObjectPairXTAESGIDataSet)

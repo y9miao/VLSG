@@ -87,7 +87,8 @@ class PatchSGIEAligner(nn.Module):
                  use_global_descriptor = False, 
                  global_descriptor_dim = None,
                  multi_view_aggregator = 'mean',
-                 img_emb_dim = 256
+                 img_emb_dim = 256,
+                 obj_img_pos_enc = False,
                  ):
         super().__init__()
         
@@ -116,7 +117,8 @@ class PatchSGIEAligner(nn.Module):
         # 3D scene graph encoder
         self.sg_encoder = MultiModalEncoder(
             modules = sg_modules, rel_dim = sg_rel_dim, attr_dim=attr_dim, img_emb_dim= img_emb_dim,
-            img_feat_dim = img_feat_dim, dropout = drop, img_aggregation_mode=multi_view_aggregator)
+            img_feat_dim = img_feat_dim, dropout = drop, img_aggregation_mode=multi_view_aggregator,
+            use_pos_enc = obj_img_pos_enc)
         self.obj_embedding_encoder = Mlps(obj_embedding_dim, hidden_features = obj_embedding_hidden_dims, 
                                         out_features = obj_encoder_dim, drop = drop)
         

@@ -44,7 +44,7 @@ class MultiModalEncoder(nn.Module):
                  hidden_units=[3, 128, 128], heads = [2, 2], emb_dim = 100, pt_out_dim = 256,
                  img_emb_dim = 256,
                  dropout = 0.0, attn_dropout = 0.0, instance_norm = False,
-                 img_aggregation_mode="mean"):
+                 img_aggregation_mode="mean", use_pos_enc=False):
         super(MultiModalEncoder, self).__init__()
         self.modules = modules
         self.pt_out_dim = pt_out_dim
@@ -59,6 +59,7 @@ class MultiModalEncoder(nn.Module):
         self.attn_dropout = attn_dropout
         self.instance_norm = instance_norm
         self.inner_view_num = len(self.modules) # Point Net + Structure Encoder + Meta Encoder
+        self.use_pos_enc = use_pos_enc
         
         if 'point' in self.modules:
             self.object_encoder = PointNetfeat(global_feat=True, batch_norm=True, point_size=3, input_transform=False, feature_transform=False, out_size=self.pt_out_dim)
@@ -82,6 +83,8 @@ class MultiModalEncoder(nn.Module):
             img_encode_dim = 256
             self.img_patch_encoder = Mlps(in_features=img_feat_dim, 
                         hidden_features=[512], out_features=img_encode_dim)
+            if self.use_pos_enc:
+                self.pose_encoder = Mlps(in_features=7, hidden_features=[128], out_features=img_encode_dim)
             
             # how to aggregate multi-view image features
             self.img_aggregation_mode = img_aggregation_mode
@@ -91,8 +94,8 @@ class MultiModalEncoder(nn.Module):
                 pass
             elif self.img_aggregation_mode == "transformer":
                 self.use_transformer_aggregator = True
-                self.img_aggregator = \
-                    TransformerEncoderLayer(d_model=img_encode_dim, nhead=4)
+                # self.img_aggregator = \
+                #     TransformerEncoderLayer(d_model=img_encode_dim, nhead=4)
                 self.multiview_encoder = PatchAggregator(d_model=img_encode_dim, nhead=4, num_layers=1, dropout=self.dropout)
                 self.multiview_norm = nn.LayerNorm(img_encode_dim)
             else:
@@ -152,6 +155,11 @@ class MultiModalEncoder(nn.Module):
                     for obj in obj_ids:
                         img_patches = img_patch_feat_scan[obj]
                         img_patches_encoded = self.img_patch_encoder(img_patches)
+                        if self.use_pos_enc:
+                            img_poses = data_dict['obj_img_poses'][scan_id][obj]
+                            img_poses = img_poses.unsqueeze(0)
+                            img_patches_encoded = img_patches_encoded + self.pose_encoder(img_poses)
+                        
                         # aggregate multi-view image features
                         if self.img_aggregation_mode == "mean":
                             img_multiview_encode = torch.mean(img_patches_encoded, dim=0, keepdim=True)

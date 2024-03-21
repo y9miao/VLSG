@@ -116,6 +116,10 @@ class Trainer(EpochBasedTrainer):
             multi_view_aggregator = cfg.sgaligner.model.multi_view_aggregator
         else:
             multi_view_aggregator = None
+        if hasattr(cfg.sgaligner, 'use_pos_enc'):
+            use_pos_enc = cfg.sgaligner.use_pos_enc
+        else:
+            use_pos_enc = False
             
         ## encoders
         patch_hidden_dims = cfg.model.patch.hidden_dims
@@ -150,7 +154,8 @@ class Trainer(EpochBasedTrainer):
                                 self.use_global_descriptor,
                                 self.global_descriptor_dim,
                                 multi_view_aggregator = multi_view_aggregator,
-                                img_emb_dim = img_emb_dim,)
+                                img_emb_dim = img_emb_dim,
+                                obj_img_pos_enc=use_pos_enc)
         
         # load pretrained sgaligner if required
         if cfg.sgaligner.use_pretrained:
