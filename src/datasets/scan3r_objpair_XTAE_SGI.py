@@ -452,7 +452,7 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
 
         # if debug with single scan
         if self.cfg.mode == "debug_few_scan":
-            return data_items[:50]
+            return data_items[:1]
         return data_items
     
     def dataItem2DataDict(self, data_item, temporal=False):

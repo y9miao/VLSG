@@ -157,7 +157,7 @@ class MultiModalEncoder(nn.Module):
                         img_patches_encoded = self.img_patch_encoder(img_patches)
                         if self.use_pos_enc:
                             img_poses = data_dict['obj_img_poses'][scan_id][obj]
-                            img_poses = img_poses.unsqueeze(0)
+                            # img_poses = img_poses.unsqueeze(0)
                             img_patches_encoded = img_patches_encoded + self.pose_encoder(img_poses)
                         
                         # aggregate multi-view image features
