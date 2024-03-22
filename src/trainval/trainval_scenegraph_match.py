@@ -113,6 +113,10 @@ class Trainer(EpochBasedTrainer):
         
         use_temporal = cfg.train.loss.use_temporal
         drop = cfg.model.other.drop
+        if hasattr(cfg.data.scene_graph, 'use_pos_enc'):
+            use_pos_enc = cfg.data.scene_graph.use_pos_enc
+        else:
+            use_pos_enc = False
         
         self.model = PatchSceneGraphAligner(
                                 backbone,
@@ -130,7 +134,8 @@ class Trainer(EpochBasedTrainer):
                                 node_out_dim,
                                 drop,
                                 use_temporal,
-                                multiview_transformer = multiview_transformer)
+                                multiview_transformer = multiview_transformer,
+                                use_pos_enc = use_pos_enc)
         
         # load snapshot if required
         if cfg.other.use_resume and os.path.isfile(cfg.other.resume):

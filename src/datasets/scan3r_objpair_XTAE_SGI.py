@@ -175,7 +175,6 @@ class PatchObjectPairXTAESGIDataSet(data.Dataset):
             self.rescan = True
             self.step = 1
             
-        
         # scans info
         self.temporal = cfg.data.temporal
         scan_info_file = osp.join(self.scans_files_dir, '3RScan.json')

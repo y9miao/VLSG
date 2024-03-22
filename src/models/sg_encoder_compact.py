@@ -74,7 +74,8 @@ class SceneGraphEncoder(nn.Module):
                  encode_dims = {'point': 128, 'attr': 128, 'img_patch': 256, 'rel': 128, 'gat': 128},
                  gat_hidden_units=[128, 128], gat_heads = [2, 2],
                  dropout = 0.0,  use_transformer_aggregator=False,
-                 multi_modal_fusion = True):
+                 multi_modal_fusion = True,
+                 use_pos_enc = False):
         super(SceneGraphEncoder, self).__init__()
         self.modules = modules
         self.in_dims = in_dims
@@ -82,8 +83,8 @@ class SceneGraphEncoder(nn.Module):
         self.encode_dims = encode_dims
         self.gat_hidden_units = gat_hidden_units
         self.gat_heads = gat_heads
-        
         self.dropout = dropout
+        self.use_pos_enc = use_pos_enc
         
         # multi modal encoder models for nodes
         self.context_num = 0
@@ -114,7 +115,9 @@ class SceneGraphEncoder(nn.Module):
                         hidden_features=encode_depth['img_patch'], out_features=img_feat_encode_dim)
             self.multiview_encoder = PatchAggregator(d_model=img_feat_encode_dim, nhead=4, num_layers=1, dropout=self.dropout)
             self.multiview_norm = nn.LayerNorm(img_feat_encode_dim)
-        
+            if self.use_pos_enc:
+                self.pose_encoder = Mlps(in_features=7, hidden_features=[128], out_features=img_feat_encode_dim)
+            
         if 'gat' in self.modules:
             self.structure_encoder = MultiGAT(n_units=[self.in_dims['gat']] +self.gat_hidden_units, 
                                               n_gat_heads=self.gat_heads, dropout=self.dropout)
@@ -163,6 +166,10 @@ class SceneGraphEncoder(nn.Module):
                     for obj in obj_ids:
                         img_patches = img_patch_feat_scan[obj]
                         img_patch_encode = self.img_patch_encoder(img_patches)
+                        if self.use_pos_enc:
+                            img_poses = data_dict['obj_img_poses'][scan_id][obj]
+                            # img_poses = img_poses.unsqueeze(0)
+                            img_patch_encode = img_patch_encode + self.pose_encoder(img_poses)
                         
                         if self.use_transformer_aggregator:
                             img_patches_attn = self.multiview_encoder(img_patch_encode.unsqueeze(0))
