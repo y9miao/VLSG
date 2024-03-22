@@ -1,5 +1,4 @@
 
-from pyparsing import C
 from yacs.config import CfgNode as CN
 import os.path as osp
 import os
@@ -23,9 +22,9 @@ _C.data.img.h = 540
 
 _C.data.img_encoding = CN()
 _C.data.img_encoding.resize_w = 1024
-_C.data.img_encoding.img_rotate: True # rotate w,h for backbone GCVit
-_C.data.img_encoding.patch_w: 16 # number of patchs in width
-_C.data.img_encoding.patch_h: 9
+_C.data.img_encoding.img_rotate = True # rotate w,h for backbone GCVit
+_C.data.img_encoding.patch_w = 16 # number of patchs in width
+_C.data.img_encoding.patch_h = 9
 _C.data.img_encoding.record_feature = False
 _C.data.img_encoding.use_feature = False
 _C.data.img_encoding.preload_feature = False

@@ -204,6 +204,12 @@ class SceneGraphPairDataset(data.Dataset):
         self.image_paths = {}
         for scan_id in self.scan_ids:
             self.image_paths[scan_id] = scan3r.load_frame_paths(self.scans_dir, scan_id, self.step)
+        self.image_poses = {}
+        # load 2D frame poses
+        for scan_id in self.scan_ids:
+            frame_idxs = scan3r.load_frame_idxs(self.scans_scenes_dir, scan_id)
+            self.image_poses[scan_id] = scan3r.load_frame_poses(
+                self.scans_scenes_dir, scan_id, frame_idxs, type='quat_trans')
             
         # load 2D patch features if use pre-calculated feature
         self.use_2D_feature = cfg.data.img_encoding.use_feature
@@ -240,6 +246,7 @@ class SceneGraphPairDataset(data.Dataset):
         obj_img_patch_name = self.cfg.data.scene_graph.obj_img_patch
         self.obj_patch_num = self.cfg.data.scene_graph.obj_patch_num
         self.obj_topk = self.cfg.data.scene_graph.obj_topk
+        self.use_pos_enc = self.cfg.data.scene_graph.use_pos_enc
         self.obj_img_patches_scan_tops = {}
         for scan_id in self.all_scans_split:
             obj_visual_file = osp.join(self.scans_files_dir, obj_img_patch_name, scan_id+'.pkl')
@@ -711,6 +718,7 @@ class SceneGraphPairDataset(data.Dataset):
         ### img patch features 
         if 'img_patch' in self.sg_encoder_modules:
             obj_img_patches = {}
+            obj_img_poses = {}
             obj_count_ = 0
             for scan_idx, scan_id in enumerate(scene_graphs_['scene_ids']):
                 scan_id = scan_id[0]
@@ -722,13 +730,18 @@ class SceneGraphPairDataset(data.Dataset):
                 obj_top_frames = obj_img_patches_scan_tops['obj_image_votes_topK']
                 
                 obj_img_patches[scan_id] = {}
+                obj_img_poses[scan_id] = {}
                 for obj_id in obj_ids:
                     if obj_id not in obj_top_frames:
                         obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
                         obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
+                        if self.use_pos_enc:
+                            identity_pos = np.array([0, 0, 0, 1, 0, 0, 0]).reshape(1, -1)
+                            obj_img_poses[scan_id][obj_id] = torch.from_numpy(identity_pos).float()
                         continue
                     
                     obj_img_patch_embs_list = []
+                    obj_img_poses_list = []
                     obj_frames = obj_top_frames[obj_id][:self.obj_topk] if len(obj_top_frames[obj_id]) >= self.obj_topk \
                         else obj_top_frames[obj_id]
                     for frame_idx in obj_frames:
@@ -736,17 +749,26 @@ class SceneGraphPairDataset(data.Dataset):
                             embs_frame = obj_img_patches_scan[obj_id][frame_idx]
                             embs_frame = embs_frame.reshape(1, -1) if embs_frame.ndim == 1 else embs_frame
                             obj_img_patch_embs_list.append(embs_frame)
+                            if self.use_pos_enc:
+                                obj_img_poses_list.append(self.image_poses[scan_id][frame_idx])
                         
                     if len(obj_img_patch_embs_list) == 0:
                         obj_img_patch_embs = np.zeros((1, self.img_patch_feat_dim))
+                        if self.use_pos_enc:
+                            obj_img_poses_arr = np.array([0, 0, 0, 1, 0, 0, 0]).reshape(1, -1)
                     else:
                         obj_img_patch_embs = np.concatenate(obj_img_patch_embs_list, axis=0)
-                        
+                        if self.use_pos_enc:
+                            obj_img_poses_arr = np.stack(obj_img_poses_list, axis=0)
+                            
                     obj_img_patches[scan_id][obj_id] = torch.from_numpy(obj_img_patch_embs).float()
+                    if self.use_pos_enc:
+                        obj_img_poses[scan_id][obj_id] = torch.from_numpy(obj_img_poses_arr).float()
                     
                 obj_count_ += scene_graphs_['tot_obj_count'][scan_idx]
             scene_graphs_['obj_img_patches'] = obj_img_patches
-        
+            if self.use_pos_enc:
+                scene_graphs_['obj_img_poses'] = obj_img_poses
         data_dict['scene_graphs'] = scene_graphs_
         
         ## obj info
