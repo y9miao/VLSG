@@ -25,20 +25,20 @@ data :
     patch_h: 9
     record_feature: False # record feature or raw image
     use_feature: True # use feature or raw image
-    preload_feature: True
+    preload_feature: False
     feature_dir: "Features2D/DinoV2_16_9_scan" # relative to data_root_dir/files
   cross_scene:
     use_cross_scene: True
     num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
-    use_tf_idf: False
   scene_graph:
     obj_img_patch: "Features3D/obj_dinov2_top5_l3"
-    obj_patch_num: 60
+    obj_topk: 1
+    obj_patch_num: 100
 
 # for sgaligner
 sgaligner:
-  use_pretrained : False
+  use_pretrained : True
   pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
 
   label_file_name : labels.instances.annotated.v2.ply
@@ -46,7 +46,7 @@ sgaligner:
 
   seed: 42
   model_name    : 'sgaligner'
-  modules       : ['point', 'attr', 'gat', 'rel']
+  modules       : ['point', 'gat', 'rel', 'attr', 'img_patch']
   # modules       : ['point', 'gat', 'rel', 'attr']
   use_predicted : False
   registration  : False
@@ -80,7 +80,7 @@ model_name    : 'ObjectPatchAligner'
 
 # for 2D-3D object match
 model:
-  # GCVit backbone
+  # backbone, not used here 
   backbone: 
     # to be read in code from env varia, relative to VLSG_SPACE
     use_pretrained: True
@@ -94,11 +94,11 @@ model:
     encoder_dim: 400
   # 3D obj embedding encoder
   obj:
-    embedding_dim: 400 # fixed
+    embedding_dim: 500 # fixed
     embedding_hidden_dims: [512, 512]
     encoder_dim: 400
   other:
-    drop: 0.0
+    drop: 0.1
 
 # implemetation
 output_dir: "" # to be read in code from env varia
@@ -106,9 +106,9 @@ mode: "train"
 # for training
 train:
   batch_size: 16
-  num_workers: 8
+  num_workers: 4
   use_pretrained: False
-  log_steps: 1
+  log_steps: 20
   snapshot_steps: 1
   optim:
     lr: 0.0011
@@ -129,10 +129,6 @@ train:
     alpha: 0.5
     temperature: 0.1
     margin: 0.5
-    # global descriptor loss
-    use_global_descriptor: True
-    global_loss_coef: 0.5
-    global_desc_temp: 0.1
   data_aug:
     use_aug: True
     img:
@@ -155,12 +151,12 @@ val:
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
-    method_name: "DinoPAGR_Global_E15_X10"
+    method_name: ""
 other:
-  use_resume: True
+  use_resume: False
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read in code from env varia
-  resume: "./week13/SGAligner_PAGR_global/epoch-15.pth.tar" 
+  resume: "./snapshots/epoch-170.pth.tar" 
 # others
 seed: 42
 

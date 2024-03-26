@@ -9,7 +9,7 @@ data :
   resplit: True
   log_dir: ""
   img:
-    img_step: 50
+    img_step: 25
   img_encoding:
     feature_dir: "features_2D/OpenSeg_24_32"
   obj_img:

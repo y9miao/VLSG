@@ -4,7 +4,7 @@ import numpy as np
 
 import torch
 import torch.utils.data as data
-
+import argparse
 import cv2
 import open3d as o3d
 # import open3d.visualization.rendering as rendering
@@ -138,13 +138,18 @@ class Scan3RIMGProjector():
         obj_id_map = np.zeros((height,width), dtype=np.uint8)
         color_map[hit_triangles_ids_valid_masks] = colors[hit_points_ids_valid]
         obj_id_map[hit_triangles_ids_valid_masks] = obj_ids[hit_points_ids_valid]
-        
         return color_map, obj_id_map
+    
         
 if __name__ == '__main__':
+    # get Data_ROOT_DIR
+    Data_ROOT_DIR = os.getenv('Data_ROOT_DIR')
 
-    data_root_dir = "/home/yang/big_ssd/Scan3R/3RScan"
-    scan3r_img_projector = Scan3RIMGProjector(data_root_dir, split='validation', use_rescan=True)
+    scan3r_img_projector = Scan3RIMGProjector(Data_ROOT_DIR, split='validation', use_rescan=True)
+    step=1
+    for idx in tqdm(range(len(scan3r_img_projector.scan_ids))):
+        scan3r_img_projector.project(idx, step=step)
+    scan3r_img_projector = Scan3RIMGProjector(Data_ROOT_DIR, split='train', use_rescan=True)
     step=1
     for idx in tqdm(range(len(scan3r_img_projector.scan_ids))):
         scan3r_img_projector.project(idx, step=step)

@@ -1,13 +1,12 @@
 import os
 import os.path as osp
 import numpy as np
-
+import sys
+vlsg_dir = osp.abspath(osp.join(osp.dirname(__file__), '..', '..'))
+sys.path.append(vlsg_dir)
 import torch
 import torch.utils.data as data
-from configs import config, update_config
-import sys
-sys.path.append('..')
-
+from configs.patch_obj_aligner_default import update_config, config
 from utils import common, scan3r
 import argparse
 

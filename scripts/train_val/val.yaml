@@ -1,10 +1,3 @@
-# LOG: This experiement is to test with temporal and non-temporal loss
-# Also test using cross scenes to train the model STEP BY STEP
-# ALSO Test for loss of ICLLoss
-# due to the original encoder ([512, 512, 512]  - [512, 512] ) has better performance than the 
-#   deeper one, we are using the original one for this experiment
-# firstly we train with no cross-scene objects with temporal loss for some epochs
-
 # for Scan3R data
 data :
   name            : Scan3R
@@ -25,22 +18,21 @@ data :
     patch_h: 9
     record_feature: False # record feature or raw image
     use_feature: True # use feature or raw image
-    preload_feature: False
+    preload_feature: True
     feature_dir: "Features2D/DinoV2_16_9_scan" # relative to data_root_dir/files
   cross_scene:
     use_cross_scene: True
     num_scenes: 9 # number of scenes 
     num_negative_samples: -1 # number of negative samples 
   scene_graph:
-    obj_img_patch: "Features3D/obj_dinov2_top5_l3"
-    obj_topk: 1
-    obj_patch_num: 100
+    obj_img_patch: "Features3D/obj_dinov2_top10_l3"
+    obj_topk: 10
+    obj_patch_num: 100 # not used here
 
-# for sgaligner
+# for scene graph embedding
 sgaligner:
-  use_pretrained : True
-  pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
-
+  use_pretrained : False
+  pretrained: ""
   label_file_name : labels.instances.annotated.v2.ply
   pred_subfix     : inseg.ply
 
@@ -52,7 +44,8 @@ sgaligner:
   registration  : False
   scan_type     : 'scan'
   img_transformer: False
-
+  use_pos_enc: True
+  
   preprocess :
     pc_resolutions      : [64, 128, 256, 512]
     subscenes_per_scene : 1
@@ -64,8 +57,9 @@ sgaligner:
     rel_dim             : 41
     attr_dim            : 164
     img_patch_feat_dim  : 1536
+    img_emb_dim: 256
     alignment_thresh    : 0.4
-
+    multi_view_aggregator: 'transformer'
   train :
     pc_res: 512
 
@@ -80,21 +74,22 @@ model_name    : 'ObjectPatchAligner'
 
 # for 2D-3D object match
 model:
-  # GCVit backbone
+  # backbone, currently not used here because we use pre-computed features for speed up
   backbone: 
     # to be read in code from env varia, relative to VLSG_SPACE
-    use_pretrained: True
+    use_pretrained: False
     cfg_file: "./src/models/GCVit/configs/gcvit/cascade_mask_rcnn_gcvit_tiny_3x_coco.py"
     pretrained: "./checkpoint/GCVit/gcvit_1k_tiny.pth.tar"
     num_reduce: 0 # should be log2(resize_w/(32*patch_w))
-    backbone_dim: 1536 # fixed
+    backbone_dim: 1536 # dim of DinoV2 features
   # patch feature encoder
   patch:
-    hidden_dims: [512, 512, 512] # last is the out dim
+    hidden_dims: [512] # last is the out dim
     encoder_dim: 400
+    gcn_layers: 2
   # 3D obj embedding encoder
   obj:
-    embedding_dim: 500 # fixed
+    embedding_dim: 656 # fixed
     embedding_hidden_dims: [512, 512]
     encoder_dim: 400
   other:
@@ -106,15 +101,15 @@ mode: "train"
 # for training
 train:
   batch_size: 16
-  num_workers: 4
+  num_workers: 16
   use_pretrained: False
   log_steps: 20
   snapshot_steps: 1
   optim:
     lr: 0.0011
     scheduler: "step"
-    lr_decay: 0.95
-    lr_decay_steps: 10500
+    lr_decay: 0.97
+    lr_decay_steps: 1
     lr_min: 0.0005
     T_max: 1000
     T_mult: 1
@@ -147,16 +142,15 @@ train:
 # for validation
 val:
   batch_size: 16
-  num_workers: 4
+  num_workers: 16
   pretrained: "./"
   room_retrieval:
     epsilon_th: 0.8
     method_name: ""
 other:
-  use_resume: False
+  use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
-  resume_folder: "" # to be read in code from env varia
-  resume: "./snapshots/epoch-170.pth.tar" 
+  resume_folder: "" # to be read from env varia
+  resume: "./snapshots/epoch-8.pth.tar" 
 # others
 seed: 42
-

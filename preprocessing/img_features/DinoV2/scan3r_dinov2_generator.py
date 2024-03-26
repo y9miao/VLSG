@@ -23,6 +23,7 @@ import time
 import traceback
 import joblib
 import wandb
+import argparse
 from PIL import Image
 from tqdm.auto import tqdm
 from typing import Literal, Tuple, List, Union
@@ -209,11 +210,26 @@ class Scan3rDinov2Generator():
         with open(self.log_file, 'a') as f:
             f.write(log_str)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Preprocess Scan3R')
+    parser.add_argument('--config', type=str, default='', help='Path to the config file')
+    return parser.parse_known_args()
+
 def main():
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
+
+    # get arguments
+    args, _ = parse_args()
+    cfg_file = args.config
+
     from configs import config, update_config
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/img_features/DinoV2/scan3r_dinov2_generator.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
+    
+    scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, 'train')
+    scan3r_gcvit_generator.register_model()
+    scan3r_gcvit_generator.generateFeatures()
+    scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, 'val')
+    scan3r_gcvit_generator.register_model()
+    scan3r_gcvit_generator.generateFeatures()
     scan3r_gcvit_generator = Scan3rDinov2Generator(cfg, 'test')
     scan3r_gcvit_generator.register_model()
     scan3r_gcvit_generator.generateFeatures()

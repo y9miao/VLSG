@@ -302,12 +302,17 @@ def calculate_bow_node_attr_feats(data_write_dir, scan_ids, data_file, word_2_ix
         common.write_pkl_data(data_dict, data_dict_filename)
     
     print('[INFO] Completed BOW Feature Calculation For Node Attribute Features.')
+    
+def parse_args():
+    parser = argparse.ArgumentParser(description='Preprocess Scan3R')
+    parser.add_argument('--config', type=str, default='', help='Path to the config file')
+    return parser.parse_known_args()
 
 if __name__ == '__main__':
-    # _, args = parse_args()
-    # cfg = update_config(config, args.config, ensure_dir=False)
+    # get arguments
+    args, _ = parse_args()
+    cfg_file = args.config
     
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/sgaligner_encode/preprocess_scan_sgaligner.yaml"
     cfg = CN()
     cfg.defrost()
     cfg.set_new_allowed(True)

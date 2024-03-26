@@ -4,7 +4,7 @@ import numpy as np
 
 import torch
 import torch.utils.data as data
-
+import argparse
 import cv2
 from tqdm import tqdm
 import sys
@@ -106,13 +106,23 @@ class Scan3ROBJAssociator():
             patch_anno_file = osp.join(self.anno_out_dir, scan_id+".pkl")
             common.write_pkl_data(self.patch_annos_scans[scan_idx], patch_anno_file)
         
+def parse_args():
+    parser = argparse.ArgumentParser(description='Preprocess Scan3R')
+    parser.add_argument('--config', type=str, default='', help='Path to the config file')
+    return parser.parse_known_args()
+        
 if __name__ == '__main__':
+    # get arguments
+    args, _ = parse_args()
+    cfg_file = args.config
     
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
-    data_root_dir = "/home/yang/big_ssd/Scan3R/3RScan"
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/gt_anno_2D/Test_SGAEI_Dino.yaml"
+    # get env variable for Data_ROOT_DIR
+    Data_ROOT_DIR = os.getenv('Data_ROOT_DIR')
     
     cfg = update_config(config, cfg_file, ensure_dir = False)
     split = "validation"
-    scan3r_img_projector = Scan3ROBJAssociator(data_root_dir, split=split, cfg=cfg)
+    scan3r_img_projector = Scan3ROBJAssociator(Data_ROOT_DIR, split=split, cfg=cfg)
+    scan3r_img_projector.annotate_scans()
+    split = "train"
+    scan3r_img_projector = Scan3ROBJAssociator(Data_ROOT_DIR, split=split, cfg=cfg)
     scan3r_img_projector.annotate_scans()

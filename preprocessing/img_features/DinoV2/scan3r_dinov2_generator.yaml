@@ -5,7 +5,7 @@ data :
   resplit: True
   log_dir: "./preprocessing/img_features/DinoV2"
   img:
-    img_step: 2
+    img_step: 1
     w: 960
     h: 540
   img_encoding:
@@ -44,7 +44,7 @@ model:
 
 # for sgaligner
 sgaligner:
-  use_pretrained : True
+  use_pretrained : False
   pretrained: "./checkpoint/sgaligner/gat-point-rel-attr-epoch-50.pth.tar"
 
   label_file_name : labels.instances.annotated.v2.ply

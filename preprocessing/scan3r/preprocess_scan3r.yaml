@@ -9,7 +9,7 @@ scan_type     : 'scan'
 
 data :
   name            : Scan3R
-  root_dir        : /home/yang/big_ssd/Scan3R/3RScan
+  root_dir        : '' # not specified here, specified through env variable
   label_file_name : labels.instances.align.annotated.v2.ply
   pred_subfix     : inseg.ply
 
@@ -21,7 +21,7 @@ preprocess :
   anchor_type_name    : '' 
 
 model :
-  rel_dim             : 9
+  rel_dim             : 41
   attr_dim            : 164
   alignment_thresh    : 0.4
 

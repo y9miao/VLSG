@@ -5,6 +5,7 @@ import numpy as np
 import random
 import torch
 import torch.utils.data as data
+import argparse
 from torchvision.transforms import transforms
 from PIL import Image
 import cv2
@@ -275,18 +276,23 @@ class ObjVisualEmbGen(data.Dataset):
     def __len__(self):
         return len(self.data_items)
     
+def parse_args():
+    parser = argparse.ArgumentParser(description='Preprocess Scan3R')
+    parser.add_argument('--config', type=str, default='', help='Path to the config file')
+    parser.add_argument('--split', type=str, default='train', help='split')
+    return parser.parse_known_args()
+    
 if __name__ == '__main__':
-    # TODO  check the correctness of dataset 
+    # get arguments
+    args, _ = parse_args()
+    cfg_file = args.config
     from configs import config, update_config
-    split = 'val'
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/big_ssd/Scan3R/3RScan"
-    cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/preprocessing/sg_features/obj_visual_embeddings/Dinov2/obj_visual_embeddings.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
+    
+    split = args.split
     scan3r_ds = ObjVisualEmbGen(cfg, split=split, vis = False)
     scan3r_ds.generateObjVisualEmb()
-
     print("Time used: ", scan3r_ds.time_used)
     with open("./time_used_{}.txt".format(split), "w") as f:
         f.write("Time used: {:.3f}s".format(scan3r_ds.time_used))
-    
     breakpoint=None
