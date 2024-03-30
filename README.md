@@ -4,8 +4,8 @@
 <a href="https://y9miao.github.io/">Yang Miao</a><sup>1</sup>, 
 <a href="https://cvg.ethz.ch/team/Dr-Francis-Engelmann">Francis Engelmann</a><sup>1, 2</sup>, 
 <a href="https://cvg.ethz.ch/team/Dr-Olga-Vysotskan">Olga Vysotska</a><sup>1</sup>, 
-<a href="https://cvg.ethz.ch/team/Dr-Daniel-Bela-Barath"> Federico Tombari</a><sup>2, 3</sup>, 
-<a href="https://cvg.ethz.ch/team/Dr-Daniel-Bela-Barath"> Marc Pollefeys</a><sup>1, 4</sup>, 
+<a href="https://federicotombari.github.io/"> Federico Tombari</a><sup>2, 3</sup>, 
+<a href="https://cvg.ethz.ch/team/Prof-Dr-Marc-Pollefeys"> Marc Pollefeys</a><sup>1, 4</sup>, 
 <a href="https://cvg.ethz.ch/team/Dr-Daniel-Bela-Barath"> Dániel Béla Baráth</a> <sup>1</sup>
 
 <sup>1</sup>ETH Zurich   <sup>2</sup>Google   <sup>3</sup>TU Munich   <sup>4</sup>Microsoft
