@@ -149,16 +149,17 @@ We provide detailed results and comparisons here.
 ### Coarse Visual Localization on 3D Scene Graphs
 ![teaser](./repo_info/Results.png)
 
-<!-- ## BibTeX :pray:
+## BibTeX :pray:
 ```
-@article{sarkar2023sgaligner,
-      title={SGAligner : 3D Scene Alignment with Scene Graphs}, 
-      author={Sayan Deb Sarkar and Ondrej Miksik and Marc Pollefeys and Daniel Barath and Iro Armeni},
-      journal={Proceedings of the IEEE International Conference on Computer Vision (ICCV)},
-      year={2023}
-} -->
-
-<!-- ``` -->
+@misc{miao2024scenegraphloc,
+      title={SceneGraphLoc: Cross-Modal Coarse Visual Localization on 3D Scene Graphs}, 
+      author={Yang Miao and Francis Engelmann and Olga Vysotska and Federico Tombari and Marc Pollefeys and Dániel Béla Baráth},
+      year={2024},
+      eprint={2404.00469},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+ ```
 
 ## Acknowledgments :recycle:
 In this project we use (parts of) the official implementations of the following works and thank the respective authors for sharing the code of their methods: 
