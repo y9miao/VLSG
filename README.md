@@ -144,8 +144,6 @@ bash scripts/train_val/inference.sh
 ```
 
 ## Benchmark :chart_with_upwards_trend:
-We provide detailed results and comparisons here.
-
 ### Coarse Visual Localization on 3D Scene Graphs
 ![teaser](./repo_info/Results.png)
 
