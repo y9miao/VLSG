@@ -9,7 +9,8 @@ import argparse
 import random
 import sys
 from yacs.config import CfgNode as CN
-ws_dir = osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__)))))
+ws_dir = osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))
+print(ws_dir)
 sys.path.append(ws_dir)
 from utils import common, point_cloud, scan3r
 from configs import config, update_config
@@ -90,7 +91,7 @@ def process_scan(data_dir, rel_data, obj_data, cfg, rel2idx, rel_transforms = No
         sub = int(triple[0])
         obj = int(triple[1])
         rel_id = int(triple[2])  
-        rel_name = triple[3] if rel_transforms is not None else rel_transforms[triple[3]]
+        rel_name = triple[3] if rel_transforms is None else rel_transforms[triple[3]]
 
         if rel_name in list(rel2idx.keys()):
             rel_id = int(rel2idx[rel_name])
@@ -177,7 +178,8 @@ def process_data(cfg, rel2idx, rel_transforms = None, mode = 'orig', split = 'tr
     
     rel_json_filename = 'relationships.json' if scan_type == 'scan' else 'relationships_subscenes_{}.json'.format(split)
     obj_json_filename = 'objects.json' if scan_type == 'scan' else 'objects_subscenes_{}.json'.format(split)
-    scan_ids_filename = '{}_scans.txt'.format(split) if scan_type == 'scan' else '{}_scans_subscenes.txt'.format(split)
+    resplit = 'resplit_' if cfg.data.resplit else ''
+    scan_ids_filename = '{}_{}scans.txt'.format(split, resplit) if scan_type == 'scan' else '{}_scans_subscenes.txt'.format(split)
 
     rel_json = common.load_json(osp.join(data_dir, 'files', rel_json_filename))['scans']
     obj_json = common.load_json(osp.join(data_dir, 'files', obj_json_filename))['scans']
@@ -306,17 +308,21 @@ def calculate_bow_node_attr_feats(data_write_dir, scan_ids, data_file, word_2_ix
 def parse_args():
     parser = argparse.ArgumentParser(description='Preprocess Scan3R')
     parser.add_argument('--config', type=str, default='', help='Path to the config file')
+    parser.add_argument('--split', type=str, default='train', help='Seed for random number generator')
     return parser.parse_known_args()
 
 if __name__ == '__main__':
     # get arguments
     args, _ = parse_args()
     cfg_file = args.config
+    split = args.split
     
-    cfg = CN()
-    cfg.defrost()
-    cfg.set_new_allowed(True)
-    cfg.merge_from_file(cfg_file)
+    # cfg = CN()
+    # cfg.defrost()
+    # cfg.set_new_allowed(True)
+    # cfg.merge_from_file(cfg_file)
+    cfg = update_config(config, cfg_file, ensure_dir = False)
+
     random.seed(cfg.seed)
     root_dir = cfg.data.root_dir
     REL2IDX_SCANNET8 = common.name2idx(osp.join(root_dir, 'files/scannet8_relationships.txt'))
@@ -324,7 +330,6 @@ if __name__ == '__main__':
     CLASS2IDX_SCANNET20 = common.name2idx(osp.join(root_dir, 'files/scannet20_classes.txt'))
     rel2idx_8 = REL2IDX_SCANNET8
     rel2idx_41 = REL2IDX_SCANNET41
-    split = 'val'
     
     # whether use 8  rel or 40 rel
     if cfg.model.rel_dim == 9:

@@ -5,8 +5,9 @@ import sys
 from tracemalloc import start
 from sklearn.utils import resample
 from yaml import scan
-vlsg_dir = osp.parent(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__)))))
-sys.path.insert(0, vlsg_dir)
+ws_dir = osp.dirname(osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__)))))
+print(ws_dir)
+sys.path.append(ws_dir)
 from utils import common, scan3r
 
 import numpy as np
@@ -33,18 +34,18 @@ from configs import update_config, config
 # Dino v2
 from dinov2_utils import DinoV2ExtractFeatures
 from dataclasses import dataclass
-@dataclass
-class LocalArgs:
-    """
-        Local arguments for the program
-    """
-    # Dino_v2 properties (parameters)
-    desc_layer: int = 31
-    desc_facet: Literal["query", "key", "value", "token"] = "value"
-    num_c: int = 32
-    # device
-    device = torch.device("cuda")
-larg = tyro.cli(LocalArgs)
+# @dataclass
+# class LocalArgs:
+#     """
+#         Local arguments for the program
+#     """
+#     # Dino_v2 properties (parameters)
+#     desc_layer: int = 31
+#     desc_facet: Literal["query", "key", "value", "token"] = "value"
+#     num_c: int = 32
+#     # device
+#     device = torch.device("cuda")
+# larg = tyro.cli(LocalArgs)
 
 class Scan3rDinov2Generator():
     def __init__(self, cfg, split):
@@ -130,11 +131,10 @@ class Scan3rDinov2Generator():
         
     def register_model(self):
         
-        self.larg = larg
-        desc_layer = larg.desc_layer
-        desc_facet = larg.desc_facet
-        device = larg.device
-        self.device = larg.device
+        desc_layer = 31
+        desc_facet = "value"
+        device = torch.device("cuda")
+        self.device = torch.device("cuda")
         
         # Dinov2 extractor
         if "extractor" in globals():

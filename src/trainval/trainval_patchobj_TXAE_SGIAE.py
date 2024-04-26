@@ -275,6 +275,9 @@ def main():
     
     config_file = args.config
     cfg = update_config(config, config_file)
+    # print('Config: ', cfg)
+    Data_ROOT_DIR = os.getenv('Data_ROOT_DIR')
+    print('Data_ROOT_DIR: ', Data_ROOT_DIR)
     
     # copy config file to out dir
     out_dir = cfg.output_dir

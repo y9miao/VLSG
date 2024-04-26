@@ -10,7 +10,9 @@ import open3d as o3d
 # import open3d.visualization.rendering as rendering
 from tqdm import tqdm
 import sys
-sys.path.append('..')
+ws_dir = osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))
+print(ws_dir)
+sys.path.append(ws_dir)
 
 from utils import common, scan3r
 
@@ -144,11 +146,12 @@ class Scan3RIMGProjector():
 if __name__ == '__main__':
     # get Data_ROOT_DIR
     Data_ROOT_DIR = os.getenv('Data_ROOT_DIR')
-
+    # note that the original validation set includes the resplited val and test set
     scan3r_img_projector = Scan3RIMGProjector(Data_ROOT_DIR, split='validation', use_rescan=True)
     step=1
     for idx in tqdm(range(len(scan3r_img_projector.scan_ids))):
         scan3r_img_projector.project(idx, step=step)
+        
     scan3r_img_projector = Scan3RIMGProjector(Data_ROOT_DIR, split='train', use_rescan=True)
     step=1
     for idx in tqdm(range(len(scan3r_img_projector.scan_ids))):

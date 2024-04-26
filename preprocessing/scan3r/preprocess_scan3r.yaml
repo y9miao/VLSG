@@ -12,6 +12,7 @@ data :
   root_dir        : '' # not specified here, specified through env variable
   label_file_name : labels.instances.align.annotated.v2.ply
   pred_subfix     : inseg.ply
+  resplit: True
 
 preprocess :
   pc_resolutions      : [64, 128, 256, 512]

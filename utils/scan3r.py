@@ -74,7 +74,7 @@ def load_all_poses(data_dir, scan_id, frame_idxs):
         frame_pose = load_pose(data_dir, scan_id, frame_idx)
         frame_poses.append(frame_pose)
     frame_poses = np.array(frame_poses)
-    return 
+    return frame_poses
 
 def load_frame_poses(data_dir, scan_id, frame_idxs, type = 'matrix'):
     frame_poses = {}

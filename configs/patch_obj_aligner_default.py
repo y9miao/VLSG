@@ -148,7 +148,7 @@ def update_config(cfg, filename, ensure_dir=True):
     cfg.merge_from_file(filename)
     
     # load dirs from env variables because CFG node doesn't support env variables
-    Data_ROOT_DIR = os.getenv('Data_ROOT_DIR')
+    Data_ROOT_DIR = os.getenv('Scan3R_ROOT_DIR')
     VLSG_SPACE = os.getenv('VLSG_SPACE')
     VLSG_TRAINING_OUT_DIR = os.getenv('VLSG_TRAINING_OUT_DIR')
     RESUME_DIR = os.getenv('RESUME_DIR')
@@ -187,7 +187,7 @@ def update_config_room_retrival(cfg, filename, ensure_dir=True):
     RESUME_DIR = os.getenv('RESUME_DIR')
     # data root
     cfg.data.root_dir = Scan3R_ROOT_DIR
-    
+
     if ensure_dir:
         # backbone files
         cfg.model.backbone.cfg_file = osp.join(VLSG_SPACE, cfg.model.backbone.cfg_file)

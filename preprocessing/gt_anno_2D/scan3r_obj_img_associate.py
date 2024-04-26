@@ -8,8 +8,9 @@ import argparse
 import cv2
 from tqdm import tqdm
 import sys
-ws_dir = "/home/yang/big_ssd/Scan3R/VLSG"
-sys.path.insert(0, ws_dir)
+ws_dir = osp.dirname(osp.dirname(osp.dirname(osp.abspath(__file__))))
+print(ws_dir)
+sys.path.append(ws_dir)
 
 from configs import config, update_config
 from utils import common, scan3r
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     
     # get env variable for Data_ROOT_DIR
     Data_ROOT_DIR = os.getenv('Data_ROOT_DIR')
-    
+    # note that the original validation set includes the resplited val and test set
     cfg = update_config(config, cfg_file, ensure_dir = False)
     split = "validation"
     scan3r_img_projector = Scan3ROBJAssociator(Data_ROOT_DIR, split=split, cfg=cfg)

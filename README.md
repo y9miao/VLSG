@@ -46,6 +46,7 @@ SceneGraphLoc solves the novel problem of cross-modal localization of a query im
 
 ### Dependencies :memo:
 
+The project has been tested on Ubuntu 20.04.
 The main dependencies of the project are the following:
 ```yaml
 python: 3.8.15
@@ -55,7 +56,18 @@ You can set up an environment as follows :
 ```bash
 git clone https://github.com/y9miao/VLSG.git
 cd VLSG
+
+conda create -n "VLSG" python=3.8.15
+conda activate VLSG
 pip install -r requirement.txt
+```
+Other dependences:
+```bash
+conda activate VLSG
+pip install -r other_deps.txt
+
+cd thrid_party/Point-NN
+pip install pointnet2_ops_lib/.
 ```
 
 ## Dataset Generation :hammer:
@@ -84,7 +96,8 @@ After installing the dependencies, we download and pre-process the datasets.
 
 
 
-First, we pre-process the scene graph information provided in the 3RScan annotation. The relevant code can be found in the ``data-preprocessing/`` directory. Don't forget to set the env variables "VLSG_SPACE" as the repository path and set "Data_ROOT_DIR" as the path to "3RScan" dataset accordingly in the bash script.
+First, we pre-process the scene graph information provided in the 3RScan annotation. The relevant code can be found in the ``data-preprocessing/`` directory.   
+Don't forget to set the env variables "VLSG_SPACE" as the repository path,  set "Data_ROOT_DIR" as the path to "3RScan" dataset and set "CONDA_BIN" to accordingly in the bash script.
 
 ```bash
 bash scripts/preprocess/scan3r_data_preprocess.sh

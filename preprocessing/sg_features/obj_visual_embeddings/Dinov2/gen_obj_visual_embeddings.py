@@ -30,18 +30,18 @@ from utils import common, scan3r
 # Dino v2
 from dinov2_utils import DinoV2ExtractFeatures
 from dataclasses import dataclass
-@dataclass
-class LocalArgs:
-    """
-        Local arguments for the program
-    """
-    # Dino_v2 properties (parameters)
-    desc_layer: int = 31
-    desc_facet: Literal["query", "key", "value", "token"] = "value"
-    num_c: int = 32
-    # device
-    device = torch.device("cuda")
-larg = tyro.cli(LocalArgs)
+# @dataclass
+# class LocalArgs:
+#     """
+#         Local arguments for the program
+#     """
+#     # Dino_v2 properties (parameters)
+#     desc_layer: int = 31
+#     desc_facet: Literal["query", "key", "value", "token"] = "value"
+#     num_c: int = 32
+#     # device
+#     device = torch.device("cuda")
+# larg = tyro.cli(LocalArgs)
 
 # openmask3d multi-level functions
 def mask2box(mask: torch.Tensor):
@@ -164,12 +164,11 @@ class ObjVisualEmbGen(data.Dataset):
         if not torch.cuda.is_available(): raise RuntimeError('No CUDA devices available.')
         self.device = torch.device("cuda")
         
-        # load DinoV2 model
-        self.larg = larg
-        desc_layer = larg.desc_layer
-        desc_facet = larg.desc_facet
-        device = larg.device
-        self.device = larg.device
+        desc_layer = 31
+        desc_facet = "value"
+        device = torch.device("cuda")
+        self.device = torch.device("cuda")
+        
         # Dinov2 extractor
         if "extractor" in globals():
             print(f"Extractor already defined, skipping")
