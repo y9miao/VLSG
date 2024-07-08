@@ -25,7 +25,9 @@ SceneGraphLoc solves the novel problem of cross-modal localization of a query im
 
 <!-- * **14. July 2023** : SGAligner accepted to ICCV 2023. :fire:
 * **1. May 2023**: [SGAligner preprint](https://arxiv.org/abs/2304.14880v1) released on arXiv. -->
-* **26. Mar 2024**: Code released.
+* **8. July 2024**: Code was made public.
+* **1. July 2024**: Accepted to ECCV 2024!
+* **26. Mar 2024**: Code was uploaded.
 
 ## Code Structure :clapper:
 
