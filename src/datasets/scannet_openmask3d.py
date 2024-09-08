@@ -225,7 +225,7 @@ class ScannetOpen3DDataset(data.Dataset):
 if __name__ == '__main__':
     # TODO  check the correctness of dataset 
     from configs import config, update_config
-    os.environ['Scan3R_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/data"
+    os.environ['Data_ROOT_DIR'] = "/home/yang/990Pro/scannet_seqs/data"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/src/room_retrieval/OpenMask3D/openmask3D_retrieval_scannet.yaml"
     cfg = update_config(config, cfg_file, ensure_dir=False)
     # scan3r_ds = Scan3rLidarClipDataset(cfg, split='val')

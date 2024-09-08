@@ -46,9 +46,11 @@ class Scan3RIMGProjector():
         self.save_dir = osp.join(self.scans_dir, 'files', 'gt_projection')
         self.save_color_dir = osp.join(self.save_dir, 'color')
         self.save_obj_dir = osp.join(self.save_dir, 'obj_id')
+        self.save_pkl_dir = osp.join(self.save_dir, 'obj_id_pkl')
         common.ensure_dir(self.save_dir)
         common.ensure_dir(self.save_color_dir)
         common.ensure_dir(self.save_obj_dir)
+        common.ensure_dir(self.save_pkl_dir)
       
     def __len__(self):
         return len(self.scan_ids)
@@ -108,7 +110,7 @@ class Scan3RIMGProjector():
         save_scan_obj_dir = osp.join(self.save_obj_dir, scan_id)
         common.ensure_dir(save_scan_color_dir)
         common.ensure_dir(save_scan_obj_dir)
-        
+        ## save image-level annotation for visualization
         for frame_idx in obj_id_imgs:
             obj_id_img = obj_id_imgs[frame_idx]
             color_img = color_imgs[frame_idx]
@@ -118,8 +120,10 @@ class Scan3RIMGProjector():
             color_img_file = osp.join(save_scan_color_dir, img_name)
             cv2.imwrite(obj_id_img_file, obj_id_img)
             cv2.imwrite(color_img_file, color_img)
+        ## save scene-level pkl file for efficient loading
+        save_scan_pkl_dir = osp.join(self.save_pkl_dir, "{}.pkl".format(scan_id))
+        common.write_pkl_data(obj_id_imgs, save_scan_pkl_dir)
             
-    
     def segmentResult(self, scene, intrinsics, extrinsics, width, height,
                       mesh_triangles, num_triangles, colors, obj_ids):
         

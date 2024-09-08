@@ -605,7 +605,7 @@ class RoomRetrievalVisualizer():
         
 def main():
     os.environ["VLSG_SPACE"] = "/home/yang/big_ssd/Scan3R/VLSG"
-    os.environ["Scan3R_ROOT_DIR"] = "/home/yang/big_ssd/Scan3R/3RScan"
+    os.environ["Data_ROOT_DIR"] = "/home/yang/big_ssd/Scan3R/3RScan"
     retrieval_result_dir = "/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PaperMetric/OursStatistics/SGMatch_PAGRI_Top10_S1_E5_X10"
     cfg_file = "/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PaperMetric/OursStatistics/SGMatch_PAGRI_Top10_S1_E5_X10/inference_room_PARGI_statistics.yaml"
     

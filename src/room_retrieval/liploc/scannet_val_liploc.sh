@@ -1,7 +1,7 @@
 # export VLSG space 
 export VLSG_SPACE=/home/yang/big_ssd/Scan3R/VLSG
 # export SCAN3R DATA ROOR
-export Scan3R_ROOT_DIR=/home/yang/990Pro/scannet_seqs/data
+export Data_ROOT_DIR=/home/yang/990Pro/scannet_seqs/data
 # export training out dir
 export ROOM_RETRIEVAL_OUT_DIR=/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PaperMetric/liploc
 # export resume folder 

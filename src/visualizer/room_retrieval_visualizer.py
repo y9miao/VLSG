@@ -747,7 +747,7 @@ class RoomRetrievalVisualizer():
         
 def main():
     os.environ["VLSG_SPACE"] = "/home/yang/big_ssd/Scan3R/VLSG"
-    os.environ["Scan3R_ROOT_DIR"] = "/home/yang/big_ssd/Scan3R/3RScan"
+    os.environ["Data_ROOT_DIR"] = "/home/yang/big_ssd/Scan3R/3RScan"
     retrieval_result_dir = "/home/yang/big_ssd/Scan3R/3RScan/out_room_retrieval/PatchObjMatch/NOI_Aug3D_Step2_E17"
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/test/Vis/room_retrie_cfg.yaml"
     

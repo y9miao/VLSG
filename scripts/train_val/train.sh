@@ -1,7 +1,7 @@
 # export VLSG space 
 export VLSG_SPACE=/home/yang/toolbox/ECCV2024/CodePlace/OfficialCode/VLSG
 # export SCAN3R DATA ROOR
-export Scan3R_ROOT_DIR=/home/yang/big_ssd/Scan3R/3RScan
+export Data_ROOT_DIR=/home/yang/big_ssd/Scan3R/3RScan
 # export retrieval out dir
 export VLSG_TRAINING_OUT_DIR=home/yang/toolbox/ECCV2024/CodePlace/Results/train
 # export resume folder 

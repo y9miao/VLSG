@@ -508,7 +508,7 @@ if __name__ == '__main__':
     sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
     from datasets.loaders import get_val_dataloader
     from configs import config, update_config
-    os.environ['Scan3R_ROOT_DIR'] = '/home/yang/990Pro/scannet_seqs/data'
+    os.environ['Data_ROOT_DIR'] = '/home/yang/990Pro/scannet_seqs/data'
     cfg_file = "/home/yang/big_ssd/Scan3R/VLSG/implementation/week16/Test_PI_scannet_GTSeg/Test_PI_scannet_GTSeg.yaml"
     cfg = update_config(config, cfg_file, ensure_dir = False)
     # train_dataloader, val_dataloader = get_train_val_data_loader(cfg, ScannetPatchObjDataset)
