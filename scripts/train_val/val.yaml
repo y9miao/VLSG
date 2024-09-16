@@ -151,6 +151,6 @@ other:
   use_resume: True
   # to be read in code from env varia, relative to VLSG_TRAINING_OUT_DIR
   resume_folder: "" # to be read from env varia
-  resume: "./snapshots/epoch-8.pth.tar" 
+  resume: "pretrained.pth.tar" 
 # others
 seed: 42

@@ -25,6 +25,7 @@ SceneGraphLoc solves the novel problem of cross-modal localization of a query im
 
 <!-- * **14. July 2023** : SGAligner accepted to ICCV 2023. :fire:
 * **1. May 2023**: [SGAligner preprint](https://arxiv.org/abs/2304.14880v1) released on arXiv. -->
+* **16. Sep 2024**: Instructions updated and pretrained model uploaded.
 * **8. July 2024**: Code was made public.
 * **1. July 2024**: Accepted to ECCV 2024!
 * **26. Mar 2024**: Code was uploaded.
@@ -144,6 +145,8 @@ To evaluate SceneGraphLoc on 3RScan dataset in the task of scene graph retrieval
 ```bash
 bash scripts/train_val/inference.sh
 ```
+The pretrained model is available [here](https://drive.google.com/file/d/1IAs3S30wmtZnLt0M4QnLRj-lYPULA3hm/view?usp=sharing).  
+Don't forget to set the env variable "ROOM_RETRIEVAL_OUT_DIR" to the parent dir of the pretrained model. 
 
 ## Benchmark :chart_with_upwards_trend:
 ### Coarse Visual Localization on 3D Scene Graphs
