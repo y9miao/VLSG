@@ -75,7 +75,7 @@ class Scan3ROBJAssociator():
         # iterate over images
         for frame_idx in frame_idxs:
             gt_2D_obj_anno_img = gt_2D_obj_anno_imgs[frame_idx]
-            patch_annos = np.zeros((self.image_patch_h, self.image_patch_w), dtype=np.uint8)
+            patch_annos = np.zeros((self.image_patch_h, self.image_patch_w), dtype=np.int32)
             # iterate over patches within one image
             for patch_h_i in range(self.image_patch_h):
                 h_start = round(patch_h_i * self.patch_h_size)

@@ -140,8 +140,8 @@ class Scan3RIMGProjector():
         hit_triangles_valid = mesh_triangles[hit_triangles_ids_valid]
         hit_points_ids_valid = hit_triangles_valid[:,0]
         
-        color_map = np.zeros((height,width,3), dtype=np.uint8)
-        obj_id_map = np.zeros((height,width), dtype=np.uint8)
+        color_map = np.zeros((height,width,3), dtype=np.uint8) # for visualization
+        obj_id_map = np.zeros((height,width), dtype=np.int32) #
         color_map[hit_triangles_ids_valid_masks] = colors[hit_points_ids_valid]
         obj_id_map[hit_triangles_ids_valid_masks] = obj_ids[hit_points_ids_valid]
         return color_map, obj_id_map

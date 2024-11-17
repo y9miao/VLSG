@@ -27,7 +27,7 @@ def getPatchAnno(gt_anno_2D, patch_w, patch_h, th = 0.5):
     patch_h_size = int(image_h / patch_h)
     patch_w_size = int(image_w / patch_w)
     
-    patch_annos = np.zeros((patch_h, patch_w), dtype=np.uint8)
+    patch_annos = np.zeros((patch_h, patch_w), dtype=np.int32)
     for patch_h_i in range(patch_h):
         h_start = round(patch_h_i * patch_h_size)
         h_end = round((patch_h_i + 1) * patch_h_size)
