@@ -40,7 +40,10 @@ def process_scan(data_dir, rel_data, obj_data, cfg, rel2idx, rel_transforms = No
     points = np.stack([ply_data['x'], ply_data['y'], ply_data['z']]).transpose((1, 0))
 
     object_points = {}
-    for pc_resolution in cfg.preprocess.pc_resolutions:
+    pc_resolutions = cfg.preprocess.pc_resolutions
+    # sort pc_resolutions in descending order
+    pc_resolutions.sort(reverse=True)
+    for pc_resolution in pc_resolutions:
         object_points[pc_resolution] = []
 
     object_data = obj_data['objects'] 
@@ -62,7 +65,7 @@ def process_scan(data_dir, rel_data, obj_data, cfg, rel2idx, rel_transforms = No
         cy = np.mean(hull.points[hull.vertices,1])
         cz = np.mean(hull.points[hull.vertices,2])
 
-        for pc_resolution in object_points.keys():
+        for pc_resolution in pc_resolutions:
             obj_pcl = point_cloud.pcl_farthest_sample(obj_pcl, pc_resolution)
             object_points[pc_resolution].append(obj_pcl)
         
@@ -72,7 +75,7 @@ def process_scan(data_dir, rel_data, obj_data, cfg, rel2idx, rel_transforms = No
         objects_cat.append(global_object_id)
         if not cfg.use_predicted : objects_attributes.append(attribute)
     
-    for pc_resolution in object_points.keys():
+    for pc_resolution in pc_resolutions:
         object_points[pc_resolution] = np.array(object_points[pc_resolution])
     
     if len(objects_ids) < 2:
