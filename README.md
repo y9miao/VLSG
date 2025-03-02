@@ -145,7 +145,8 @@ To evaluate SceneGraphLoc on 3RScan dataset in the task of scene graph retrieval
 ```bash
 bash scripts/train_val/inference.sh
 ```
-The pretrained model is available [here](https://drive.google.com/file/d/11pdML8cXRW1sGAPd7wJfqGccjrcqIYu_/view?usp=sharing).  
+The pretrained model for 3RScan is available [here](https://drive.google.com/file/d/11pdML8cXRW1sGAPd7wJfqGccjrcqIYu_/view?usp=sharing).  
+The pretrained model for Scannet is available [here]([https://drive.google.com/file/d/11pdML8cXRW1sGAPd7wJfqGccjrcqIYu_/view?usp=sharing](https://drive.google.com/file/d/1rwRoRJxncNnO2u0XLr0Bc2RFGc_ktrH5/view?usp=sharing)).  
 Don't forget to set the env variable "ROOM_RETRIEVAL_OUT_DIR" to the parent dir of the pretrained model. 
 
 ## Benchmark :chart_with_upwards_trend:
